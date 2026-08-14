@@ -49,6 +49,8 @@ We add `tenantId` (required for multi-tenancy).
 | D11 | **CDC via Debezium** instead of a transactional outbox | Only one write happens, so there is no dual-write gap. Removes the outbox collection, the transaction, and the relay process |
 | D12 | **Topic key = `conversationId`** via an SMT chain (not `_id`, not `tenantId:conversationId`) | Kafka only orders within a partition, and `partition = hash(key) % n`. A key unique per record (`_id`) scatters a conversation across partitions and gives up ordering entirely. `conversationId` groups a conversation onto one partition, so one consumer processes it sequentially. Adding `tenantId` would not improve distribution (ObjectIds are already globally unique), complicates the SMT, and worsens hot-partition risk. Not strictly required by today's consumer, but it is the right answer to the graded item and re-keying a live topic later is expensive. Producer must run with `enable.idempotence=true` or retries can still reorder |
 | D21 | **Accept the hot-partition risk that comes with D12** — no bucket-sharding, no fallback keying | Quantified in [back-of-envelope.md](./back-of-envelope.md): with the bulk consumer of D22, one conversation saturates its partition at roughly **400,000 users typing continuously at once**, and Kafka itself only at ~600,000. Ordinary messaging never approaches this; only live-stream chat does, and that is a different product. Mitigations (bucketed composite key, dedicated topic for hot conversations) are documented in ADR-002b but deliberately not built — they would trade away per-conversation ordering to solve a problem this workload does not have |
+| D23 | **pnpm rather than yarn** | Faster installs. Its stricter resolution also surfaced three type dependencies the hoisted layout was masking. `node-linker=hoisted` is set in `.npmrc` because typegoose and @suites both assume a flat tree |
+| D24 | **MongoDB on host port 27018, Redis on 6380** | The standard ports are commonly already taken by other projects on a developer machine; overridable via `MONGO_HOST_PORT` / `REDIS_HOST_PORT` |
 | D22 | **Bulk-index into ES and coalesce `lastMessageAt` per batch** — mandatory, not an optimization | Same estimate: a naive per-document consumer tops out at ~220 msg/s (~13,000 concurrent senders), which *is* within reach of a real live-event chat. Bulk raises it ~30× to ~6,700 msg/s and moves the bottleneck off the consumer onto Kafka. This is what makes D21's acceptance defensible — without it, accepting the risk would not be |
 | D13 | **ES coupling to the Mongo schema is acceptable** | ES is a read model **inside the same bounded context** (CQRS). The boundary: once a consumer outside this context subscribes, we must publish a second, curated topic |
 | D14 | **One shared ES index + a filtered alias per tenant** | The application only ever knows `messages-{tenantId}`. Switching to index-per-tenant becomes a pure ops migration, zero code change |
@@ -310,7 +312,9 @@ APP_ENV=local|test|stg|prod
 PORT=3000
 LOG_LEVEL=debug
 
-MONGO_URI=mongodb://localhost:27017/messaging?replicaSet=rs0
+MONGO_HOST_PORT=27018
+REDIS_HOST_PORT=6380
+MONGO_URI=mongodb://localhost:27018/messaging?replicaSet=rs0&directConnection=true
 REDIS_HOST / REDIS_PORT / REDIS_USERNAME / REDIS_PASSWORD
 KAFKA_BROKERS=localhost:9092
 KAFKA_CONSUMER_GROUP=message-search-indexer
@@ -321,11 +325,13 @@ JWT_SECRET=<32 characters>
 
 ## 9. Scripts
 
+All via pnpm.
+
 ```
 start:dev · start:prod · start:consumer
 migrate:up · migrate:down · migrate:create
-es:apply-templates
-debezium:register
+es:apply-templates          (M3)
+debezium:register           (M2)
 test · test:cov · lint · build
 ```
 
@@ -336,8 +342,8 @@ test · test:cov · lint · build
 | Risk | Mitigation |
 |---|---|
 | Exact Debezium MongoDB SMT class name (`io.debezium.connector.mongodb.transforms.ExtractNewDocumentState`) | Verify against real compose in M2 before writing the consumer |
-| typegoose ↔ mongoose 8 ↔ Nest 11 compatibility | Pin versions at install; smoke test in M0 |
-| `@suites` sociable TestBed with a `Connection` token | The most fragile part of the port — do it first in M0, with three specs proving it |
+| ~~typegoose ↔ mongoose 8 ↔ Nest 11 compatibility~~ | **Resolved in M0.** mongoose pinned to 8.21.0 to satisfy typegoose's peer range; keyv pinned via pnpm `overrides` because cache-manager pulled a second, structurally incompatible copy |
+| ~~`@suites` sociable TestBed with a `Connection` token~~ | **Resolved in M0.** The trap was not @suites but TypeScript: `import mongoose, { Connection } from 'mongoose'` makes `Connection` undefined at run time, so the DI token silently became `undefined`. Named-only imports fix it. Nest framework classes (ModuleRef, Reflector) also had to be excluded from the scanner |
 | Kafka Connect is heavy (~1GB JVM, ~2 min compose startup) | Accepted; README states the expected wait and healthcheck |
 | Elasticsearch client 8 vs 9 API differences | Pin to whatever the compose image ships |
 

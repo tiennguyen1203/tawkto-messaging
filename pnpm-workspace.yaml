@@ -1,0 +1,13 @@
+# pnpm 10+ reads these here rather than from package.json.
+
+# cache-manager pulls its own copy of keyv, and two copies are structurally
+# incompatible (private class fields), so pin the tree to one version.
+overrides:
+  keyv: ^5.6.0
+
+# @suites' DI and doubles adapters register themselves from a postinstall hook;
+# without it every lightweight spec fails to resolve an adapter.
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@suites/di.nestjs'
+  - '@suites/doubles.jest'

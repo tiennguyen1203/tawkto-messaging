@@ -1,0 +1,37 @@
+name: CI check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-tests:
+    timeout-minutes: 15
+    name: Lint, typecheck and test
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        run: pnpm exec eslint "src/**/*.ts"
+
+      # Testcontainers starts MongoDB; the Docker daemon is available on
+      # ubuntu-latest runners by default.
+      - name: Test
+        run: pnpm test

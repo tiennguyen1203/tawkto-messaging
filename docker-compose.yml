@@ -1,0 +1,85 @@
+# Local development stack. There is no hosted environment for this project —
+# everything runs here.
+#
+# MongoDB runs as a single-node replica set on purpose: change streams (the CDC
+# source feeding Kafka in M2) are unavailable on a standalone server.
+
+services:
+  mongo:
+    image: mongo:7.0
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    # Host port is 27018 by default so this stack can coexist with any other
+    # MongoDB already bound to 27017 on the developer's machine.
+    ports:
+      - '${MONGO_HOST_PORT:-27018}:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # Initiates the replica set on first boot, then reports healthy once a
+      # PRIMARY has been elected.
+      test: |
+        mongosh --quiet --eval '
+          try { rs.status().ok } catch (e) {
+            rs.initiate({_id: "rs0", members: [{_id: 0, host: "mongo:27017"}]}).ok
+          }
+        '
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '${REDIS_HOST_PORT:-6380}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Applies index migrations, then exits. Run it before the api the first time:
+  #   docker compose up migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['pnpm', 'migrate:up']
+    environment:
+      MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    profiles:
+      - migrate
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-32-character-secret-value}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - app
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
