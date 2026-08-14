@@ -39,53 +39,69 @@ describe('@workflows/shared/base-use-case', () => {
   });
 
   describe('#execute', () => {
-    it('returns data with a null error on success', async () => {
-      await expect(usecase.execute({})).resolves.toEqual({
-        data: { ok: true },
-        error: null,
+    describe('when the use case succeeds', () => {
+      it('should return the data with a null error', async () => {
+        await expect(usecase.execute({})).resolves.toEqual({
+          data: { ok: true },
+          error: null,
+        });
       });
     });
 
-    it('maps a typed domain error onto the result, preserving metadata', async () => {
-      const { data, error } = await usecase.execute({ shouldFail: 'notFound' });
+    describe('when the use case throws a typed domain error', () => {
+      it('should map it onto the result, preserving the metadata', async () => {
+        const { data, error } = await usecase.execute({
+          shouldFail: 'notFound',
+        });
 
-      expect(data).toBeNull();
-      expect(error?.type).toBe(UseCaseErrorType.NOT_FOUND);
-      expect(error?.message).toBe('conversation not found');
-      expect(error?.metadata).toEqual({ id: '42' });
+        expect(data).toBeNull();
+        expect(error?.type).toBe(UseCaseErrorType.NOT_FOUND);
+        expect(error?.message).toBe('conversation not found');
+        expect(error?.metadata).toEqual({ id: '42' });
+      });
     });
 
-    it('does not leak an unexpected error to the caller', async () => {
-      const { error } = await usecase.execute({ shouldFail: 'unknown' });
+    describe('when the use case throws something unanticipated', () => {
+      it('should not leak the internal message to the caller', async () => {
+        const { error } = await usecase.execute({ shouldFail: 'unknown' });
 
-      expect(error?.type).toBe(UseCaseErrorType.INTERNAL_SERVER_ERROR);
-      expect(error?.message).not.toContain('did not anticipate');
+        expect(error?.type).toBe(UseCaseErrorType.INTERNAL_SERVER_ERROR);
+        expect(error?.message).not.toContain('did not anticipate');
+      });
     });
   });
 
   describe('#executeOrThrowHttpError', () => {
-    it('returns the payload directly on success', async () => {
-      await expect(usecase.executeOrThrowHttpError({})).resolves.toEqual({
-        ok: true,
+    describe('when the use case succeeds', () => {
+      it('should return the payload directly', async () => {
+        await expect(usecase.executeOrThrowHttpError({})).resolves.toEqual({
+          ok: true,
+        });
       });
     });
 
-    it('turns NOT_FOUND into a 404', async () => {
-      await expect(
-        usecase.executeOrThrowHttpError({ shouldFail: 'notFound' }),
-      ).rejects.toMatchObject({ status: 404 });
+    describe('when the use case reports NOT_FOUND', () => {
+      it('should throw a 404', async () => {
+        await expect(
+          usecase.executeOrThrowHttpError({ shouldFail: 'notFound' }),
+        ).rejects.toMatchObject({ status: 404 });
+      });
     });
 
-    it('turns a business rule violation into a 422', async () => {
-      await expect(
-        usecase.executeOrThrowHttpError({ shouldFail: 'businessRule' }),
-      ).rejects.toMatchObject({ status: 422 });
+    describe('when the use case reports a business rule violation', () => {
+      it('should throw a 422', async () => {
+        await expect(
+          usecase.executeOrThrowHttpError({ shouldFail: 'businessRule' }),
+        ).rejects.toMatchObject({ status: 422 });
+      });
     });
   });
 
   describe('#throwIfHaveErrorInUseCase', () => {
-    it('is a no-op when there is no error', () => {
-      expect(() => throwIfHaveErrorInUseCase(null)).not.toThrow();
+    describe('when there is no error', () => {
+      it('should do nothing', () => {
+        expect(() => throwIfHaveErrorInUseCase(null)).not.toThrow();
+      });
     });
   });
 });

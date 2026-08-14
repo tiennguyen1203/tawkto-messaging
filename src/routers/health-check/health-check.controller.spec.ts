@@ -12,19 +12,23 @@ describe('@routers/health-check/controller', () => {
   afterAll(() => testHelper.afterAll());
 
   describe('#GET /api/health', () => {
-    it('is reachable without a token and reports healthy', async () => {
-      const res = await testHelper.request.get('/api/health');
+    describe('when the request carries no token', () => {
+      it('should still answer, because the route is public', async () => {
+        const res = await testHelper.request.get('/api/health');
 
-      expect(res.status).toBe(200);
-      expect(res.body.data.status).toBe('ok');
+        expect(res.status).toBe(200);
+        expect(res.body.data.status).toBe('ok');
+      });
     });
 
-    it('checks both mongodb and redis', async () => {
-      const res = await testHelper.request.get('/api/health');
+    describe('when the dependencies are reachable', () => {
+      it('should report mongodb and redis as up', async () => {
+        const res = await testHelper.request.get('/api/health');
 
-      expect(res.body.data.details).toMatchObject({
-        mongodb: { status: 'up' },
-        redis: { status: 'up' },
+        expect(res.body.data.details).toMatchObject({
+          mongodb: { status: 'up' },
+          redis: { status: 'up' },
+        });
       });
     });
   });
