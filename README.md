@@ -2,11 +2,25 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M0 — infrastructure skeleton.** The application boots, the health check
-reports on its dependencies, and the three test modes run against a real MongoDB.
-There is no message domain yet; see [docs/PLAN.md](docs/PLAN.md) for the milestones
-and [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis
-behind the partitioning decisions.
+**Status: M1 — messaging domain over MongoDB.** Conversations and messages can be
+created and listed with cursor pagination, scoped to a tenant and enforced by the
+domain rather than by the callers. Kafka (M2) and Elasticsearch search (M3) are not
+wired yet; see [docs/PLAN.md](docs/PLAN.md) for the milestones and
+[docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
+the partitioning decisions.
+
+## Endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
+| `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
+| `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
+| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | M3 |
+| `GET` | `/api/health` | Public |
+
+Another tenant's conversation answers **404**, never 403 — a 403 would confirm it
+exists. A known conversation with a non-participant sender answers **403**.
 
 ---
 
@@ -71,16 +85,15 @@ scale independently.
 
 | Entrypoint | Role | Status |
 |---|---|---|
-| `src/main.ts` | HTTP API | M0 |
+| `src/main.ts` | HTTP API | M1 |
 | `src/main.consumer.ts` | Kafka consumer → Elasticsearch indexer | M3 |
 
 ### Layers
 
 ```
 routers/      HTTP controllers and DTOs — no business logic
-workflows/    application layer: one use case per directory
-domain/       aggregates, invariants, domain events        (M1)
-cores/        persistence models, mappers, repositories
+workflows/    use cases — one per directory; business rules live here
+cores/        persistence models, repositories
 infra/        database, logging, CLS, caching, kafka, elasticsearch
 common/       cross-cutting: base repository, guards, filters, interceptors
 ```
@@ -93,11 +106,24 @@ from there by
 [TenantScopedRepository](src/common/tenant-scoped.repository.ts). It is never
 accepted from a request body, param or query string.
 
-The consequence is that isolation is a property of the repository rather than a
-discipline applied at each call site: a use case cannot leak across tenants by
-forgetting a filter clause, and a repository used outside a tenant context throws
-rather than silently querying everything. Work that legitimately spans tenants —
-consumers, migrations, jobs — states the tenant explicitly via `forTenant(id)`.
+Every inherited method that takes a filter is overridden to apply it, and writes
+stamp `tenantId` rather than accept one — `Omit<Partial<T>, 'tenantId'>` makes
+supplying it a compile error. So isolation is a property of the repository rather
+than a discipline applied at each call site: a use case cannot leak across tenants
+by forgetting a clause, and a repository used with no tenant in scope throws
+instead of quietly querying everything.
+
+Two named doors lead out, and only two:
+
+| | For |
+|---|---|
+| `forTenant(id)` | Consumers, jobs and migrations that run outside a request and so have no CLS context |
+| `acrossTenants()` | Deliberately global work — a platform-admin report, a backfill across tenants |
+
+Both are visible at the call site, which is the point: a cross-tenant query should
+be impossible to write by accident and trivial to grep for on purpose. The
+authority to use `acrossTenants()` is the use case's to check — the repository
+knows nothing about roles.
 
 ### The empty-filter guard
 
@@ -107,8 +133,8 @@ someone else's — and `updateMany` / `deleteMany` affect every document in the
 collection. Neither raises an error.
 
 [BaseRepository](src/common/base.repository.ts) refuses any call whose conditions
-all evaporated, turning a silent breach into a loud failure. `src/common/base.repository.spec.ts`
-covers it.
+all evaporated, turning a silent breach into a loud failure.
+[base.repository.spec.ts](src/common/base.repository.spec.ts) covers it.
 
 ### Indexes
 
@@ -144,6 +170,7 @@ which resolves through a string token the scanner cannot follow.
 
 | Command | Purpose |
 |---|---|
+| `pnpm build` | Compile with `tsc` (not the Nest CLI — see D26 in the plan) |
 | `pnpm start:dev` | HTTP API with watch mode |
 | `pnpm start:consumer` | Kafka consumer (M3) |
 | `pnpm migrate:up` / `migrate:down` | Apply / roll back index migrations |
@@ -156,4 +183,7 @@ which resolves through a string token the scanner cannot follow.
 - [docs/PLAN.md](docs/PLAN.md) — decisions, architecture, milestones
 - [docs/back-of-envelope.md](docs/back-of-envelope.md) — capacity estimate behind
   the Kafka partitioning trade-off
+- [docs/testing-conventions.md](docs/testing-conventions.md) — the when/should
+  naming pattern, what is tested at which layer, and how load-bearing tests are
+  proven non-vacuous
 - `docs/adr/` — architecture decision records (M4)

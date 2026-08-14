@@ -40,22 +40,27 @@ export class TenantScopedTestDocRepository extends TenantScopedRepository<TestDo
   // `async` matters: the tenant guard throws while building the filter, and a
   // Promise-returning method must reject rather than throw synchronously.
   async findByName(name: string) {
-    return this.findOne(this.scoped({ name }));
+    return this.findOne({ name });
   }
 
   async listAll() {
-    return this.find(this.scoped());
+    return this.find();
   }
 
+  /** Deletes everything this tenant owns; the filter is supplied by the base. */
   async deleteAllScoped() {
-    return this.deleteMany(this.scoped());
+    return this.deleteMany({ tenantId: this.tenantId });
   }
 }
 
 export class TestDocFactory extends BaseFactory<TestDoc> {
+  constructor(private readonly tenantId = 'tenant-a') {
+    super();
+  }
+
   protected definition(): Partial<TestDoc> {
     return {
-      tenantId: 'tenant-a',
+      tenantId: this.tenantId,
       name: faker.word.noun(),
       score: faker.number.int({ min: 0, max: 100 }),
     };

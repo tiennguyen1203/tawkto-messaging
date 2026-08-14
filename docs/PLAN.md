@@ -50,13 +50,18 @@ We add `tenantId` (required for multi-tenancy).
 | D12 | **Topic key = `conversationId`** via an SMT chain (not `_id`, not `tenantId:conversationId`) | Kafka only orders within a partition, and `partition = hash(key) % n`. A key unique per record (`_id`) scatters a conversation across partitions and gives up ordering entirely. `conversationId` groups a conversation onto one partition, so one consumer processes it sequentially. Adding `tenantId` would not improve distribution (ObjectIds are already globally unique), complicates the SMT, and worsens hot-partition risk. Not strictly required by today's consumer, but it is the right answer to the graded item and re-keying a live topic later is expensive. Producer must run with `enable.idempotence=true` or retries can still reorder |
 | D21 | **Accept the hot-partition risk that comes with D12** — no bucket-sharding, no fallback keying | Quantified in [back-of-envelope.md](./back-of-envelope.md): with the bulk consumer of D22, one conversation saturates its partition at roughly **400,000 users typing continuously at once**, and Kafka itself only at ~600,000. Ordinary messaging never approaches this; only live-stream chat does, and that is a different product. Mitigations (bucketed composite key, dedicated topic for hot conversations) are documented in ADR-002b but deliberately not built — they would trade away per-conversation ordering to solve a problem this workload does not have |
 | D23 | **pnpm rather than yarn** | Faster installs. Its stricter resolution also surfaced three type dependencies the hoisted layout was masking. `node-linker=hoisted` is set in `.npmrc` because typegoose and @suites both assume a flat tree |
+| D25 | **TypeScript 6.0.3** — the newest release the toolchain actually supports | 7.x is the Go rewrite and does not expose the JavaScript compiler API ts-jest needs: it fails at `globalSetup`, taking all 71 tests with it. It also sits outside typescript-eslint's peer range (`<6.1.0`). 6.0.3 is inside both peer ranges and passes typecheck, build, lint and the full suite. Adopting it required three config changes TypeScript 6 makes mandatory: `baseUrl` removed in favour of relative `paths`, `types` named explicitly (auto-discovery of `@types/*` is gone), and `rootDir` stated rather than inferred (TS5011). Verified empirically, not assumed |
+| D29 | **A conversation needs at least two distinct participants** | Two very different requests used to produce identical results: `participantIds: []` (a client that forgot to fill the list) and `participantIds: ['alice']` (a deliberate note-to-self) both answered 201 with a conversation containing only the caller. The API could not tell a bug from an intention. The rule cannot live in the DTO, because the creator is merged in and duplicates collapsed afterwards — the use case is the first point where membership is final, which is also what turns a previously dead guard into a reachable one: its old test passed `creatorId: ''`, a state `JwtStrategy` makes impossible. So the DTO now rejects an empty array (`@ArrayMinSize(1)`, a 400 naming the field) and the use case rejects a final membership below `MIN_CONVERSATION_PARTICIPANTS`. Note-to-self is a real feature in other products; supporting it is a one-line change to that constant, and doing it deliberately beats arriving at it by accident |
+| D28 | **`TenantScopedRepository` overrides every filter-taking method; two named doors lead out** | Only reads were confined originally, via a `protected scoped()` helper each repository method had to remember to call — and `createOne`, `updateMany`, `deleteMany` were inherited raw. `createOne({tenantId:'tenant-b'})` or `deleteMany({name:'x'})` inside a tenant-a request reached straight into another tenant. All nine primitives (`findOne`, `find`, `exists`, `count`, `updateOne`, `updateMany`, `findOneAndUpdate`, `deleteOne`, `deleteMany`) are now overridden to scope; `findById`/`updateById`/`deleteById` inherit the confinement through polymorphism. Writes stamp `tenantId` rather than accept one, and the signature narrows to `Omit<Partial<T>,'tenantId'>` so supplying one is a compile error — that is what makes an override honest instead of surprising, and why a separate `createOneInTenant` was rejected: a new name leaves the unsafe method public and turns isolation back into a convention. **Guard order matters**: the empty-filter check runs on the *caller's* filter before scoping, because `{name: undefined}` scoped becomes `{tenantId}` — a perfectly usable filter that would let the mistake through. Escape hatches are `forTenant(id)` for jobs with no CLS context and `acrossTenants()` for deliberately global work (a future platform-admin role); both are greppable, so every place isolation is set aside can be audited, and the authority check belongs in the use case since the repository knows nothing about roles. Inserts are never relaxed — a document must belong to a tenant. Uncovered: a subclass touching `this.model` directly bypasses all of it; review has to catch that |
+| D27 | **Input shape is validated by the DTO; use cases validate only what needs loaded state** | Content being non-blank and within the length bound is a property of the request, so `CreateMessageDtos.RequestDto` owns it: the failure becomes a 400 naming the offending field, the bound shows up in Swagger, and there is one place to change it. Duplicating the same two checks inside the use case bought nothing — every caller arrives through the controller. `@Trim()` runs before `@MinLength(1)`, which closes the gap where `"   "` satisfied a three-character minimum. What stays in the use case is what a DTO cannot see: whether the conversation exists in this tenant (404) and whether the sender is a participant (403). The trade-off accepted here: the use case now trusts its input, so a future non-HTTP caller would need its own validation |
+| D26 | **Build with `tsc` directly, not `nest build`** | @nestjs/cli resolves its own bundled TypeScript regardless of what the project declares, so the declared compiler was never the one building the app. On this configuration `nest build` also exits 0 while emitting nothing — a silent failure far worse than an error. Compiling with `tsc -p tsconfig.build.json` makes the declared compiler the real one; nothing is lost, since this project uses no Nest CLI compiler plugins and has no assets to copy. The switch also exposed a pre-existing bug: `tsc` leaves the `@/*` path aliases verbatim in the emitted JavaScript, so `node dist/main` — which is what `start:prod` and the Dockerfile's CMD both run — could not resolve them and crashed on boot. `nest start` had been hiding it by registering tsconfig-paths at run time. `tsc-alias` now rewrites the aliases to relative paths after compilation |
 | D24 | **MongoDB on host port 27018, Redis on 6380** | The standard ports are commonly already taken by other projects on a developer machine; overridable via `MONGO_HOST_PORT` / `REDIS_HOST_PORT` |
 | D22 | **Bulk-index into ES and coalesce `lastMessageAt` per batch** — mandatory, not an optimization | Same estimate: a naive per-document consumer tops out at ~220 msg/s (~13,000 concurrent senders), which *is* within reach of a real live-event chat. Bulk raises it ~30× to ~6,700 msg/s and moves the bottleneck off the consumer onto Kafka. This is what makes D21's acceptance defensible — without it, accepting the risk would not be |
 | D13 | **ES coupling to the Mongo schema is acceptable** | ES is a read model **inside the same bounded context** (CQRS). The boundary: once a consumer outside this context subscribes, we must publish a second, curated topic |
 | D14 | **One shared ES index + a filtered alias per tenant** | The application only ever knows `messages-{tenantId}`. Switching to index-per-tenant becomes a pure ops migration, zero code change |
 | D15 | **Cursor pagination on both read endpoints** | Mongo keyset · ES `search_after`. Avoids the `from + size ≤ 10000` ceiling |
 | D16 | **Ordering: server-assigned `timestamp` + `_id` tiebreaker.** No `sentAt`, no `seq` | Client clocks cannot be trusted. `seq` costs an extra round-trip and creates a hot document — not worth it for chat |
-| D17 | **DDD level 2** — thin aggregates with invariants and domain events; `cores/models` demoted to persistence models + mappers | Level 1 is Transaction Script (reviewers spot it). Level 3 is over-engineering for a 3-endpoint app |
+| D17 | **No domain layer — invariants live in the use cases** | The aggregates were removed after M1. With one bounded context and one write path they were a validating factory wearing an aggregate's name: 91 lines of `Message.create()` / `Conversation.create()` whose only caller was the use case that immediately unpacked the result field by field back into a persistence shape. Worse, `Conversation.create()` was being used to *rehydrate* rows already in the database, so its invariants re-ran on data that had already passed them. The rules are now plain guards at the top of `handle()`, throwing `UseCaseError` subclasses directly — the pattern the rest of the codebase already used. The tests that covered those rules moved down to the use-case specs, so nothing is unverified; the cost is that they now need a database and run in ~8.5s rather than ~0s |
 | D18 | **Test the consumer with fixtures** shaped like Debezium's output; no Kafka Connect inside Jest | Debezium is proven infrastructure; we test the code we wrote. True end-to-end is verified once via compose |
 | D19 | **Kafka in KRaft mode**, no Zookeeper | One fewer container |
 | D20 | **Approximate `total` for search, no `total` for the message list** | An exact count on a keyset query is a second, expensive query |
@@ -83,10 +88,8 @@ POST /api/messages
   │
   ├─ CreateMessageUseCase
   │    ├─ conversationRepository.findOne({ _id, tenantId })   → not found = 404
-  │    ├─ Message.create({ conversation, senderId, content }) → domain invariants
-  │    │     · content non-empty, ≤ MAX_CONTENT_LENGTH
-  │    │     · senderId ∈ conversation.participantIds         → otherwise 403
-  │    ├─ MessageMapper.toPersistence()
+  │    ├─ guards: senderId ∈ participantIds                   → otherwise 403
+  │    │          content non-empty, ≤ MAX_MESSAGE_CONTENT_LENGTH → otherwise 400
   │    └─ messageRepository.createOne()   ← ONE insert; server assigns timestamp
   │
   └─ 201
@@ -158,14 +161,8 @@ src/
 
   common/                          base.repository · filters · guards · interceptors
                                    decorators · exceptions · constants · types
-  domain/
-    messaging/
-      message/                     message.aggregate · message-created.event · errors
-      conversation/                conversation.aggregate
-
   cores/
     models/                        message.model · conversation.model  (typegoose)
-    mappers/                       domain ↔ persistence
     repositories/                  constructed from Connection
 
   infra/
@@ -248,11 +245,10 @@ test-helper modes survived the port
 ### M1 — Domain + Mongo + REST
 
 - `Conversation` and `Message` models, mappers, repositories
-- Domain layer at level 2: aggregates, invariants, `MessageCreated`
 - `migrate-mongo` plus the index migration; `autoIndex: false`
 - `POST /api/conversations` · `POST /api/messages` ·
   `GET /conversations/:id/messages` (cursor)
-- Unit tests (domain, usecases) and integration tests (controllers against real Mongo)
+- Use-case and controller specs against a real MongoDB
 
 **Done when:** the full read/write path works, tests are green, and **the app is usable
 without Kafka or ES**

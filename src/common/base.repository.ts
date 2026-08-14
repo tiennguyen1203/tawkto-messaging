@@ -67,7 +67,7 @@ export const hasNoDefinedCondition = (filter: unknown): boolean => {
   });
 };
 
-const assertUsableFilter = (filter: unknown, label: string): void => {
+export const assertUsableFilter = (filter: unknown, label: string): void => {
   if (hasNoDefinedCondition(filter)) {
     throw new Error(
       `${label} was called with an empty filter; refusing to affect every document.`,
@@ -75,7 +75,10 @@ const assertUsableFilter = (filter: unknown, label: string): void => {
   }
 };
 
-const assertUsableReadFilter = (filter: unknown, label: string): void => {
+export const assertUsableReadFilter = (
+  filter: unknown,
+  label: string,
+): void => {
   if (hasNoDefinedCondition(filter)) {
     throw new Error(
       `${label} was called with an empty filter; refusing to return an arbitrary document.`,

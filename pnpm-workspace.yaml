@@ -5,9 +5,18 @@
 overrides:
   keyv: ^5.6.0
 
-# @suites' DI and doubles adapters register themselves from a postinstall hook;
-# without it every lightweight spec fails to resolve an adapter.
-onlyBuiltDependencies:
-  - '@nestjs/core'
-  - '@suites/di.nestjs'
-  - '@suites/doubles.jest'
+# Every package with an install script must be answered for explicitly; pnpm
+# refuses to install while any is undecided.
+allowBuilds:
+  # @suites' DI and doubles adapters register themselves from a postinstall
+  # hook. Without it every lightweight spec fails to resolve an adapter.
+  '@suites/di.nestjs': true
+  '@suites/doubles.jest': true
+  '@nestjs/core': true
+
+  # Declined: analytics telemetry, and optional native speedups pulled in by
+  # testcontainers' SSH transport that this project never uses.
+  '@scarf/scarf': false
+  cpu-features: false
+  ssh2: false
+  protobufjs: false

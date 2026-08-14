@@ -12,4 +12,5 @@ export const env = {
   ROOT_DIR: '',
 };
 
+export * from './message.constant';
 export * from './timezone.constant';

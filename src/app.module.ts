@@ -6,6 +6,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { MongooseConfigService } from './infra/database/database.service';
 import { RoutersModule } from './routers/module';
 import { RepositoriesModule } from './cores/repositories.module';
+import { WorkflowsModule } from './workflows/module';
 import { JwtStrategyGuard } from './common/guards';
 import { JwtStrategy } from './common/auth-passport/jwt.strategy';
 import { env } from './common/constants';
@@ -29,6 +30,7 @@ export const commonModules = [
     useClass: MongooseConfigService,
   }),
   RepositoriesModule,
+  WorkflowsModule,
   CachingModule.register(),
 ];
 
