@@ -28,7 +28,7 @@ import {
 export class MessageChangeHandler {
   private readonly logger = new Logger(MessageChangeHandler.name);
 
-  constructor(private readonly searchIndex: MessageSearchIndex) {}
+  constructor(private readonly messageSearchIndex: MessageSearchIndex) {}
 
   async handleBatch(events: MessageChangeEvent[]): Promise<void> {
     const usable = events.filter((event) => isIndexable(event));
@@ -53,7 +53,7 @@ export class MessageChangeHandler {
         : { op: 'index', document: toSearchDocument(event) },
     );
 
-    await this.searchIndex.applyWrites(writes);
+    await this.messageSearchIndex.applyWrites(writes);
 
     this.logger.debug('Applied a batch of message changes', {
       received: events.length,

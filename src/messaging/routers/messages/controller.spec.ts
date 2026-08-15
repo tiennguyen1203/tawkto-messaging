@@ -11,11 +11,11 @@ describe('@routers/messages/controller', () => {
   const testHelper = TestHelper.lightweightMode(MessagesController);
   const searchHelper = new SearchHelper('controller-spec');
   const SEARCH_TENANT = searchHelper.tenant('a');
-  let searchIndex: MessageSearchIndex;
+  let messageSearchIndex: MessageSearchIndex;
 
   beforeAll(async () => {
     await searchHelper.setUp();
-    searchIndex = new MessageSearchIndex(searchHelper.client);
+    messageSearchIndex = new MessageSearchIndex(searchHelper.client);
     await testHelper.beforeAll();
   }, 180_000);
 
@@ -237,7 +237,7 @@ describe('@routers/messages/controller', () => {
       testHelper.fakeUser({ id: 'alice', tenantId: SEARCH_TENANT });
 
     const seed = async (conversationId: string, contents: string[]) => {
-      await searchIndex.applyWrites(
+      await messageSearchIndex.applyWrites(
         contents.map((content, i) => ({
           op: 'index' as const,
           document: {

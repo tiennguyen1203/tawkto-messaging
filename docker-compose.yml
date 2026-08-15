@@ -209,6 +209,8 @@ services:
       MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Identity publishes tenant events for messaging to provision against.
+      KAFKA_BROKERS: kafka:9092
       # The same secret messaging verifies with. One deployable, one key — the
       # moment these are separate services this becomes a key distribution
       # problem, and that is the point at which asymmetric signing earns its keep.
@@ -217,6 +219,8 @@ services:
       mongo:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     profiles:
       - app

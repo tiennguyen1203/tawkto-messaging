@@ -51,7 +51,7 @@ export class ConversationRepository extends TenantScopedRepository<ConversationM
   constructor(
     connection: Connection,
     cls: ClsService<AppClsStore>,
-    private readonly caching: CachingService,
+    private readonly cachingService: CachingService,
   ) {
     super(
       getModelForClass(ConversationModel, { existingConnection: connection }),
@@ -95,8 +95,8 @@ export class ConversationRepository extends TenantScopedRepository<ConversationM
       return null;
     }
 
-    return this.caching.getOrSet<ConversationSummary | null>({
-      key: this.caching.withPrefix(
+    return this.cachingService.getOrSet<ConversationSummary | null>({
+      key: this.cachingService.withPrefix(
         CachePrefixEnum.Conversation,
         `${this.tenantId}:${id}`,
       ),

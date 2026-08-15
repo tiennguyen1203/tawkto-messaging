@@ -35,7 +35,7 @@ and `ForDemoOnlyGuard` refuses all of them outside a local environment.
 
 | Method | Path | Notes |
 |---|---|---|
-| `POST` | `/api/v1/for-demo/tenants` | Creates a tenant |
+| `POST` | `/api/v1/for-demo/tenants` | Creates a tenant, and publishes the event that provisions its search alias |
 | `POST` | `/api/v1/for-demo/users` | Creates a user inside one |
 | `GET` | `/api/v1/for-demo/users?tenantId=` | Lists a tenant's users — what the picker UI will read |
 | `POST` | `/api/v1/for-demo/tokens` | Issues a token for a user id. No credential is checked |
@@ -64,8 +64,9 @@ docker compose up -d mongo redis kafka kafka-connect elasticsearch
 docker compose ps            # wait for all five to be healthy
 
 pnpm migrate:up              # MongoDB indexes and change stream pre-images
-pnpm es:apply-templates      # the Elasticsearch index and its mapping
-pnpm kafka:create-topics     # the topic, with the partition count ordering needs
+pnpm es:apply-templates      # the Elasticsearch index, its mapping, and the
+                             # cluster's refusal to auto-create messages-* indices
+pnpm kafka:create-topics     # both topics, with the partition counts they need
 pnpm debezium:register       # the CDC connector
 
 pnpm start:dev               # the API

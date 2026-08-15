@@ -18,3 +18,21 @@ export enum KafkaTopic {
 export enum KafkaConsumerGroup {
   MessageSearchIndexer = 'message-search-indexer',
 }
+
+/**
+ * A topic another context owns, named here on purpose.
+ *
+ * Identity publishes it; this context consumes it. Importing Identity's
+ * declaration would be a compile-time dependency between two contexts whose only
+ * agreed coupling is a wire format — and the lint boundary refuses it. So the
+ * name is written twice, and the two are kept honest by an end-to-end check
+ * rather than by the compiler. That is the same bargain the Debezium connector
+ * config strikes with `KafkaTopic.MessageChanged`.
+ */
+export enum ExternalKafkaTopic {
+  IdentityTenantCreated = 'identity.tenant-created.v1',
+}
+
+export enum ExternalKafkaConsumerGroup {
+  TenantProvisioner = 'messaging-tenant-provisioner',
+}

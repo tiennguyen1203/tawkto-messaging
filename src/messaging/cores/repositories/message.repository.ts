@@ -32,7 +32,7 @@ export class MessageRepository extends TenantScopedRepository<MessageModel> {
   constructor(
     connection: Connection,
     cls: ClsService<AppClsStore>,
-    private readonly searchIndex: MessageSearchIndex,
+    private readonly messageSearchIndex: MessageSearchIndex,
   ) {
     super(
       getModelForClass(MessageModel, { existingConnection: connection }),
@@ -90,7 +90,7 @@ export class MessageRepository extends TenantScopedRepository<MessageModel> {
    * `MessageSearchIndex` directly, the way a migration talks to a collection.
    */
   async search(request: MessageSearchRequest): Promise<MessageSearchPage> {
-    return this.searchIndex.search({
+    return this.messageSearchIndex.search({
       tenantId: this.tenantId,
       conversationId: request.conversationId,
       text: request.text,

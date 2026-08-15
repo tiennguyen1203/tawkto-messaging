@@ -86,6 +86,28 @@ const main = async (): Promise<void> => {
     console.log(`Created index '${MESSAGES_INDEX}'`);
   }
 
+  // Refuse to conjure an index named like one of ours.
+  //
+  // A write addressed to an alias that does not exist otherwise creates a
+  // concrete index under that name, with a dynamic mapping — so `dynamic: strict`
+  // stops applying, and the alias can never be created afterwards because an
+  // index already holds the name (`invalid_alias_name_exception`). Recovering
+  // means reindexing by hand. Verified on 8.15.3; see PLAN.md §10.
+  //
+  // `+*` keeps auto-creation on for everything else, which the Kafka Connect
+  // internals and any future index rely on.
+  const autoCreate = await call('PUT', '/_cluster/settings', {
+    persistent: {
+      'action.auto_create_index': `-${MESSAGES_INDEX}*,-messages-*,+*`,
+    },
+  });
+  if (autoCreate.status >= 300) {
+    throw new Error(`Restricting auto_create_index failed: ${autoCreate.text}`);
+  }
+  console.log(
+    `Refusing auto-creation of messages-* indices (alias typos now fail loudly)`,
+  );
+
   const mapping = await call('GET', `/${MESSAGES_INDEX}/_mapping`);
   const fields = Object.keys(
     (

@@ -13,7 +13,14 @@ it can be corrected in the same commit as the thing it describes.
 flowchart TD
     client(["Client<br/>bearer token carries sub + tenantId"])
 
-    subgraph api["API process — src/main.ts"]
+    subgraph identity["Identity — src/identity/main.ts"]
+        direction TB
+        idctl["for-demo controllers<br/>tenants · users · tokens"]
+        idrepo["Tenant and User repositories"]
+        idpub["Tenant events publisher"]
+    end
+
+    subgraph api["Messaging API — src/messaging/main.ts"]
         direction TB
         guard["JwtStrategyGuard<br/>verifies JWT, puts tenantId in CLS"]
         ctl["Controllers<br/>conversations · messages · health"]
@@ -26,8 +33,15 @@ flowchart TD
     redis[("Redis<br/>conversation summaries, 60s TTL<br/>key carries the tenant")]
     dbz["Debezium on Kafka Connect<br/>unwrap envelope · re-key by conversation"]
     kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-changed.v1<br/>6 partitions · key = conversationId"]]
-    consumer["Consumer — src/main.consumer.ts<br/>eachBatch → one ordered bulk request<br/>create · update · delete<br/>document id = message id, so replay overwrites"]
+    consumer["Messaging indexer — src/messaging/main.consumer.ts<br/>eachBatch → one ordered bulk request<br/>create · update · delete<br/>document id = message id, so replay overwrites"]
     es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>content analysed · metadata flattened")]
+
+    client -->|HTTPS| idctl
+    idctl --> idrepo
+    idctl --> idpub
+    idrepo -->|tenants · users| mongo
+    idpub -->|identity.tenant-created.v1| kafka
+    idctl -.->|signed JWT| client
 
     client -->|HTTPS| guard
     guard --> ctl
@@ -38,6 +52,8 @@ flowchart TD
     mongo -->|oplog| dbz
     dbz -->|publish| kafka
     kafka -->|one partition per conversation| consumer
+    kafka -->|tenant created| consumer
+    consumer -->|provision alias| es
     consumer -->|index and delete, in event order| es
     ctl --> searchuc
     searchuc -->|match and search_after| es
@@ -49,6 +65,7 @@ flowchart TD
 
     class client plain
     class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es,searchuc done
+    class idctl,idrepo,idpub done
     class redis done
 ```
 
@@ -79,6 +96,10 @@ every arrow now carries traffic.
 | M3.3 | `search_after` queries and the search endpoint | done |
 | M3.4 | `lastMessageAt` on the conversation | dropped — nothing reads it, see [PLAN.md](./PLAN.md) |
 | M4 | README for a cold reader, seven ADRs, domain glossary | done |
+| — | Contexts split into `shared/` + `messaging/`, boundary enforced by lint | done |
+| I1 | Identity: tenants, users, token issuance, its own process | done |
+| I2 | `tenant-created` event — Identity publishes, Messaging provisions the alias | done |
+| I3 | The user-picker demo UI | not started |
 
 M3 is split so each part can be reviewed on its own: the schema alone first, then
 one thin slice at a time, each ending with something demonstrable. The reasoning
@@ -88,13 +109,14 @@ Nothing is amber: every component drawn above does work in the running system.
 
 ## Known gaps
 
-**Search aliases are created on the write path.** `ensureAlias` creates a tenant's
-filtered alias the first time that tenant's messages are indexed, cached in a
-per-process `Set`. It belongs in tenant provisioning instead — there is no tenant
-lifecycle in this codebase yet, so every tenant-shaped resource is created lazily.
-Moving it collapses `ensureAlias` into a pure string and removes the cache
-entirely. The failure mode that makes this worth moving, and the cheaper fix that
-neutralises it either way, are in [PLAN.md §10](./PLAN.md#10-deferred--tenant-provisioning).
+**Search aliases are created twice over, on purpose.** Identity's
+`tenant-created` event provisions a tenant's alias before its first message
+arrives, and `ensureAlias` still creates one lazily if the event was never seen.
+The second is the recovery path rather than the design: publishing is a dual write
+— the only one in the system — and a lost publish degrades to the behaviour that
+existed before the event did. What made the lost case dangerous, an alias typo
+silently becoming a concrete index, is now refused by
+`action.auto_create_index`.
 
 **No endpoint lists conversations.** They can be created and posted into, but not
 enumerated — which is also why `lastMessageAt` was dropped rather than built: it

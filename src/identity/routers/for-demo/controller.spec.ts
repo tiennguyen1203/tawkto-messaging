@@ -1,12 +1,37 @@
+import { TenantCreatedEvent } from '@/identity/infra/kafka/tenant-created.event';
+import { TenantEventsPublisher } from '@/identity/infra/kafka/tenant-events.publisher';
 import { TestHelper } from '@/shared/test/test-helper';
 import { ForDemoController } from './controller';
 
+/**
+ * Stands in for the real publisher, which would want a broker.
+ *
+ * Recording the calls rather than discarding them is the point: publishing the
+ * tenant event is a promise this context makes to another one, and a promise no
+ * test checks is a promise that quietly stops being kept.
+ */
+class RecordingTenantEventsPublisher {
+  static published: TenantCreatedEvent[] = [];
+
+  tenantCreated(event: TenantCreatedEvent): Promise<void> {
+    RecordingTenantEventsPublisher.published.push(event);
+    return Promise.resolve();
+  }
+}
+
 describe('@identity/routers/for-demo/controller', () => {
-  const testHelper = TestHelper.lightweightMode(ForDemoController);
+  const testHelper = TestHelper.lightweightMode(ForDemoController).mock(
+    TenantEventsPublisher,
+    RecordingTenantEventsPublisher,
+  );
 
   beforeAll(() => testHelper.beforeAll(), 120_000);
   afterAll(() => testHelper.afterAll());
   afterEach(() => testHelper.cleanUp());
+
+  beforeEach(() => {
+    RecordingTenantEventsPublisher.published = [];
+  });
 
   const createTenant = async (name = 'Acme Corp'): Promise<string> => {
     const res = await testHelper.request
@@ -41,12 +66,35 @@ describe('@identity/routers/for-demo/controller', () => {
       });
     });
 
+    describe('when a tenant is created', () => {
+      it('should announce it, so another context can provision against it', async () => {
+        // Messaging turns this into the tenant's search alias. Losing it is
+        // survivable — the alias is also created lazily — but silently stopping
+        // publishing would move that recovery path back to being the design.
+        const res = await testHelper.request
+          .post('/api/v1/for-demo/tenants')
+          .send({ name: 'Announced Co' })
+          .expect(201);
+
+        expect(RecordingTenantEventsPublisher.published).toEqual([
+          {
+            tenantId: res.body.data.id,
+            name: 'Announced Co',
+            createdAt: expect.any(Number),
+          },
+        ]);
+      });
+    });
+
     describe('when the name is blank', () => {
       it('should answer 400', async () => {
         await testHelper.request
           .post('/api/v1/for-demo/tenants')
           .send({ name: '   ' })
           .expect(400);
+
+        // Nothing was stored, so nothing may have been announced.
+        expect(RecordingTenantEventsPublisher.published).toEqual([]);
       });
     });
 

@@ -37,10 +37,10 @@ const _rejectedByTheCompiler = (cache: CachingService) => {
 void _rejectedByTheCompiler;
 
 describe('@infra/caching/service', () => {
-  let caching: CachingService;
+  let cachingService: CachingService;
 
   beforeEach(() => {
-    caching = new CachingService(createCache());
+    cachingService = new CachingService(createCache());
   });
 
   describe('#getOrSet', () => {
@@ -48,10 +48,10 @@ describe('@infra/caching/service', () => {
       it('should compute it, return it, and serve the next call from the cache', async () => {
         const fn = jest.fn().mockResolvedValue({ answer: 42 });
 
-        expect(await caching.getOrSet({ key: 'k', fn })).toEqual({
+        expect(await cachingService.getOrSet({ key: 'k', fn })).toEqual({
           answer: 42,
         });
-        expect(await caching.getOrSet({ key: 'k', fn })).toEqual({
+        expect(await cachingService.getOrSet({ key: 'k', fn })).toEqual({
           answer: 42,
         });
 
@@ -72,8 +72,8 @@ describe('@infra/caching/service', () => {
         async (_label, value) => {
           const fn = jest.fn().mockResolvedValue(value);
 
-          await caching.getOrSet({ key: 'k', fn });
-          const second = await caching.getOrSet({ key: 'k', fn });
+          await cachingService.getOrSet({ key: 'k', fn });
+          const second = await cachingService.getOrSet({ key: 'k', fn });
 
           expect(second).toEqual(value);
           expect(fn).toHaveBeenCalledTimes(1);
@@ -101,8 +101,8 @@ describe('@infra/caching/service', () => {
           .mockResolvedValueOnce(null)
           .mockResolvedValueOnce({ created: true });
 
-        expect(await caching.getOrSet({ key: 'k', fn })).toBeNull();
-        expect(await caching.getOrSet({ key: 'k', fn })).toEqual({
+        expect(await cachingService.getOrSet({ key: 'k', fn })).toBeNull();
+        expect(await cachingService.getOrSet({ key: 'k', fn })).toEqual({
           created: true,
         });
       });
@@ -125,7 +125,9 @@ describe('@infra/caching/service', () => {
           );
 
         const callers = Promise.all(
-          Array.from({ length: 20 }, () => caching.getOrSet({ key: 'k', fn })),
+          Array.from({ length: 20 }, () =>
+            cachingService.getOrSet({ key: 'k', fn }),
+          ),
         );
 
         expect(await callers).toEqual(
@@ -144,11 +146,11 @@ describe('@infra/caching/service', () => {
           .mockRejectedValueOnce(new Error('database is down'))
           .mockResolvedValueOnce({ answer: 42 });
 
-        await expect(caching.getOrSet({ key: 'k', fn })).rejects.toThrow(
+        await expect(cachingService.getOrSet({ key: 'k', fn })).rejects.toThrow(
           'database is down',
         );
 
-        expect(await caching.getOrSet({ key: 'k', fn })).toEqual({
+        expect(await cachingService.getOrSet({ key: 'k', fn })).toEqual({
           answer: 42,
         });
         expect(fn).toHaveBeenCalledTimes(2);
@@ -159,9 +161,9 @@ describe('@infra/caching/service', () => {
   describe('#withPrefix', () => {
     describe('when building a key', () => {
       it('should namespace it so unrelated values cannot collide', () => {
-        expect(caching.withPrefix(CachePrefixEnum.Conversation, 'abc')).toBe(
-          'conversation:abc',
-        );
+        expect(
+          cachingService.withPrefix(CachePrefixEnum.Conversation, 'abc'),
+        ).toBe('conversation:abc');
       });
     });
   });

@@ -5,8 +5,15 @@ import { JwtStrategy } from '@/shared/auth-passport/jwt.strategy';
 import { JwtStrategyGuard } from '@/shared/guards';
 import { platformModules } from '@/shared/platform';
 import { IdentityRepositoriesModule } from './cores/repositories.module';
+import { IdentityKafkaModule } from './infra/kafka/module';
 import { IdentityRoutersModule } from './routers/module';
 import { IdentityWorkflowsModule } from './workflows/module';
+
+/**
+ * What every Identity process needs before it is any particular one: the shared
+ * platform, plus this service's own infrastructure.
+ */
+export const identityModules = [...platformModules, IdentityKafkaModule];
 
 /**
  * Identity's composition root — its own process, its own port.
@@ -17,7 +24,7 @@ import { IdentityWorkflowsModule } from './workflows/module';
  */
 @Module({
   imports: [
-    ...platformModules,
+    ...identityModules,
     IdentityRepositoriesModule,
     IdentityWorkflowsModule,
     IdentityRoutersModule,

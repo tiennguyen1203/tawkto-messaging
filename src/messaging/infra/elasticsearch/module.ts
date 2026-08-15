@@ -14,9 +14,9 @@ import { MessageSearchIndex } from './message-search.index';
     {
       provide: Client,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
+      useFactory: (configService: ConfigService) =>
         new Client({
-          node: config.getOrThrow<string>('ELASTICSEARCH_NODE'),
+          node: configService.getOrThrow<string>('ELASTICSEARCH_NODE'),
           // Fail fast rather than hold a batch open while the cluster is
           // unreachable; a rejected batch is replayed, a hung one is not.
           requestTimeout: 5_000,

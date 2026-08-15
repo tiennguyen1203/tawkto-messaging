@@ -17,6 +17,8 @@
  */
 import { Kafka } from 'kafkajs';
 
+import { TENANT_CREATED_PARTITIONS } from '@/identity/common/constants';
+import { IdentityKafkaTopic } from '@/identity/common/enums';
 import { MESSAGE_CHANGED_PARTITIONS } from '@/messaging/common/constants';
 import { KafkaTopic } from '@/messaging/common/enums';
 
@@ -40,17 +42,23 @@ const main = async (): Promise<void> => {
           numPartitions: MESSAGE_CHANGED_PARTITIONS,
           replicationFactor: 1,
         },
+        {
+          topic: IdentityKafkaTopic.IdentityTenantCreated,
+          numPartitions: TENANT_CREATED_PARTITIONS,
+          replicationFactor: 1,
+        },
       ],
     });
 
     console.log(
-      created
-        ? `Created '${KafkaTopic.MessageChanged}' with ${MESSAGE_CHANGED_PARTITIONS} partitions`
-        : `Topic '${KafkaTopic.MessageChanged}' already exists`,
+      created ? 'Created missing topics' : 'All topics already exist',
     );
 
     const metadata = await admin.fetchTopicMetadata({
-      topics: [KafkaTopic.MessageChanged],
+      topics: [
+        KafkaTopic.MessageChanged,
+        IdentityKafkaTopic.IdentityTenantCreated,
+      ],
     });
     for (const topic of metadata.topics) {
       console.log(`${topic.name}: ${topic.partitions.length} partitions`);

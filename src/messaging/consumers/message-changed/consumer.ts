@@ -28,14 +28,14 @@ export class MessageChangeConsumer
   private consumer?: Consumer;
 
   constructor(
-    private readonly config: ConfigService,
-    private readonly handler: MessageChangeHandler,
+    private readonly configService: ConfigService,
+    private readonly messageChangeHandler: MessageChangeHandler,
   ) {}
 
   async onModuleInit(): Promise<void> {
     const kafka = new Kafka({
       clientId: KafkaConsumerGroup.MessageSearchIndexer,
-      brokers: this.config
+      brokers: this.configService
         .getOrThrow<string>('KAFKA_BROKERS')
         .split(',')
         .map((broker) => broker.trim()),
@@ -88,7 +88,7 @@ export class MessageChangeConsumer
       .map((message) => this.parse(message.value))
       .filter((event): event is MessageChangeEvent => event !== null);
 
-    await this.handler.handleBatch(events);
+    await this.messageChangeHandler.handleBatch(events);
 
     // Only now. A crash before this point replays the batch, which is safe: the
     // document id is the message id, so re-indexing overwrites rather than

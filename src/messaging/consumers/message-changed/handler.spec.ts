@@ -11,7 +11,7 @@ describe('@consumers/message-changed/handler', () => {
   const helper = new SearchHelper('handler-spec');
   const TENANT_A = helper.tenant('a');
   const TENANT_B = helper.tenant('b');
-  let handler: MessageChangeHandler;
+  let messageChangeHandler: MessageChangeHandler;
 
   const event = (
     overrides: Partial<MessageChangeEvent> = {},
@@ -34,14 +34,16 @@ describe('@consumers/message-changed/handler', () => {
 
   beforeAll(async () => {
     await helper.setUp();
-    handler = new MessageChangeHandler(new MessageSearchIndex(helper.client));
+    messageChangeHandler = new MessageChangeHandler(
+      new MessageSearchIndex(helper.client),
+    );
   }, 180_000);
 
   afterAll(() => helper.tearDown());
   afterEach(() => helper.cleanUp());
 
   const handleAndRefresh = async (events: MessageChangeEvent[]) => {
-    await handler.handleBatch(events);
+    await messageChangeHandler.handleBatch(events);
     await helper.refresh();
   };
 
