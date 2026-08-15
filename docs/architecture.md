@@ -25,8 +25,8 @@ flowchart TD
     mongo[("MongoDB — replica set rs0<br/>conversations · messages<br/>indexes owned by migrations")]
     redis[("Redis<br/>health-checked, caches nothing yet")]
     dbz["Debezium on Kafka Connect<br/>unwrap envelope · re-key by conversation"]
-    kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-created.v1<br/>6 partitions · key = conversationId"]]
-    consumer["Consumer — src/main.consumer.ts<br/>eachBatch → one bulk request<br/>document id = message id, so replay overwrites"]
+    kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-changed.v1<br/>6 partitions · key = conversationId"]]
+    consumer["Consumer — src/main.consumer.ts<br/>eachBatch → one ordered bulk request<br/>create · update · delete<br/>document id = message id, so replay overwrites"]
     es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>content analysed · metadata flattened")]
 
     client -->|HTTPS| guard
@@ -38,7 +38,7 @@ flowchart TD
     mongo -->|oplog| dbz
     dbz -->|publish| kafka
     kafka -->|one partition per conversation| consumer
-    consumer -->|bulk index| es
+    consumer -->|index and delete, in event order| es
     consumer -.->|lastMessageAt| mongo
     ctl -.-> searchuc
     searchuc -.->|match and search_after| es
@@ -58,10 +58,14 @@ A message is written **once**, to MongoDB. Nothing publishes to Kafka on the
 request path — Debezium reads the oplog instead, so there is no moment where the
 message is stored but the event is lost.
 
-From there the consumer takes whole batches off the topic and indexes them in one
-bulk request. Posting a message makes it searchable in about three seconds with no
-manual step, verified on compose. The two dashed arrows are what remains: no
-endpoint queries the index yet, and nothing writes `lastMessageAt` back.
+The topic carries the whole change stream, not just insertions — the name says
+`changed` because a create, an edit and a deletion all travel over it. The consumer
+takes whole batches off it and turns each event into one Elasticsearch operation, in
+the order the events arrived: a create and an edit both write the document whole, a
+deletion removes it. Posting a message makes it searchable in about two seconds,
+editing it replaces the indexed copy, and deleting it removes it — all verified on
+compose. The two dashed arrows are what remains: no endpoint queries the index yet,
+and nothing writes `lastMessageAt` back.
 
 ## Where each phase left off
 
@@ -100,7 +104,7 @@ neutralises it either way, are in [PLAN.md §10](./PLAN.md#10-deferred--tenant-p
 **Redis caches nothing.** It is configured, health-checked and proven reachable,
 but no use case caches anything through it. Caching is optional in the brief.
 
-**The topic name is written twice.** `KafkaTopic.MessageCreated` is injected into
+**The topic name is written twice.** `KafkaTopic.MessageChanged` is injected into
 the connector config by `scripts/register-debezium.ts`, so the producer cannot
 drift from the consumer — but the collection name in
 `infra/debezium/message-connector.json` is still a literal that has to match

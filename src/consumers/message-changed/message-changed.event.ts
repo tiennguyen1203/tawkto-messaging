@@ -1,5 +1,5 @@
 /**
- * The shape that arrives on `KafkaTopic.MessageCreated`.
+ * The shape that arrives on `KafkaTopic.MessageChanged`.
  *
  * This is the stored MongoDB document after Debezium's unwrap transform has
  * flattened the change envelope — captured from a running stack, not inferred
@@ -17,7 +17,7 @@
  *   · `__deleted` is added by the unwrap transform and is `false` or `"false"`
  *     for inserts, so a consumer must not assume the field is absent.
  */
-export type MessageCreatedEvent = {
+export type MessageChangeEvent = {
   _id: string;
   tenantId: string;
   conversationId: string;
@@ -34,9 +34,9 @@ export type MessageCreatedEvent = {
 };
 
 /** The Kafka record key: the conversation the message belongs to. */
-export type MessageCreatedKey = string;
+export type MessageChangeKey = string;
 
-export const isDeletion = (event: MessageCreatedEvent): boolean =>
+export const isDeletion = (event: MessageChangeEvent): boolean =>
   event.__deleted === true || event.__deleted === 'true';
 
 /**
@@ -49,5 +49,5 @@ export const isDeletion = (event: MessageCreatedEvent): boolean =>
  * overwrite writes a second copy instead — verified against records this repo's
  * own M2 connector produced before D32 was reverted.
  */
-export const isIndexable = (event: MessageCreatedEvent): boolean =>
+export const isIndexable = (event: MessageChangeEvent): boolean =>
   Boolean(event._id && event.tenantId && event.conversationId);

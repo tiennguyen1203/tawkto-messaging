@@ -4,39 +4,43 @@ import {
   MessageSearchIndex,
 } from '@/infra/elasticsearch/message-search.index';
 import { SearchHelper } from '@/test/search-helper';
-import { MessageCreatedHandler } from './handler';
-import { MessageCreatedEvent } from './message-created.event';
+import { MessageChangeHandler } from './handler';
+import { MessageChangeEvent } from './message-changed.event';
 
-describe('@consumers/message-created/handler', () => {
+describe('@consumers/message-changed/handler', () => {
   const helper = new SearchHelper('handler-spec');
   const TENANT_A = helper.tenant('a');
   const TENANT_B = helper.tenant('b');
-  let handler: MessageCreatedHandler;
+  let handler: MessageChangeHandler;
 
   const event = (
-    overrides: Partial<MessageCreatedEvent> = {},
-  ): MessageCreatedEvent => ({
-    _id: 'm1',
-    tenantId: TENANT_A,
-    conversationId: 'c1',
-    senderId: 'alice',
-    content: 'charlie delta echo',
-    timestamp: 1786763181092,
-    createdAt: 1786763181093,
-    updatedAt: 1786763181093,
-    __deleted: false,
-    ...overrides,
-  });
+    overrides: Partial<MessageChangeEvent> = {},
+  ): MessageChangeEvent => {
+    const base: MessageChangeEvent = {
+      _id: 'm1',
+      tenantId: TENANT_A,
+      conversationId: 'c1',
+      senderId: 'alice',
+      content: 'charlie delta echo',
+      timestamp: 1786763181092,
+      createdAt: 1786763181093,
+      updatedAt: 1786763181093,
+      __deleted: false,
+      ...overrides,
+    };
+    // `_id` becomes the Elasticsearch document id, which is global to the index.
+    return { ...base, _id: helper.id(base._id) };
+  };
 
   beforeAll(async () => {
     await helper.setUp();
-    handler = new MessageCreatedHandler(new MessageSearchIndex(helper.client));
+    handler = new MessageChangeHandler(new MessageSearchIndex(helper.client));
   }, 180_000);
 
   afterAll(() => helper.tearDown());
   afterEach(() => helper.cleanUp());
 
-  const handleAndRefresh = async (events: MessageCreatedEvent[]) => {
+  const handleAndRefresh = async (events: MessageChangeEvent[]) => {
     await handler.handleBatch(events);
     await helper.refresh();
   };
@@ -46,7 +50,9 @@ describe('@consumers/message-created/handler', () => {
       index: messageAliasFor(tenantId),
       query: { match_all: {} },
     });
-    return found.hits.hits.map((hit) => hit._source!.messageId).sort();
+    return found.hits.hits
+      .map((hit) => helper.plain(hit._source!.messageId))
+      .sort();
   };
 
   describe('when a batch of inserts arrives', () => {
@@ -62,11 +68,15 @@ describe('@consumers/message-created/handler', () => {
   });
 
   describe('when the batch contains a deletion', () => {
-    it('should index the inserts and skip the deletion', async () => {
+    it('should remove the deleted message and keep the rest', async () => {
       // The transform reports the flag as a boolean or as a string depending on
       // the converter, so both spellings have to be understood.
       await handleAndRefresh([
         event({ _id: 'kept' }),
+        event({ _id: 'gone' }),
+        event({ _id: 'also-gone' }),
+      ]);
+      await handleAndRefresh([
         event({ _id: 'gone', __deleted: true }),
         event({ _id: 'also-gone', __deleted: 'true' }),
       ]);
@@ -75,8 +85,39 @@ describe('@consumers/message-created/handler', () => {
     });
   });
 
-  describe('when the whole batch is deletions', () => {
-    it('should send no request at all', async () => {
+  describe('when one message is created, edited and deleted in a single batch', () => {
+    it('should leave nothing behind', async () => {
+      // A client hammering the API can produce all three inside one batch window.
+      // The writes are applied in the order the events arrived, so the deletion
+      // lands last and wins.
+      await handleAndRefresh([
+        event({ _id: 'ephemeral', content: 'created' }),
+        event({ _id: 'ephemeral', content: 'edited' }),
+        event({ _id: 'ephemeral', __deleted: true }),
+      ]);
+
+      expect(await indexedIds()).toEqual([]);
+    });
+  });
+
+  describe('when a message is edited twice in one batch', () => {
+    it('should keep the later content', async () => {
+      await handleAndRefresh([
+        event({ _id: 'm1', content: 'older' }),
+        event({ _id: 'm1', content: 'newer' }),
+      ]);
+
+      const found = await helper.client.search<MessageSearchDocument>({
+        index: messageAliasFor(TENANT_A),
+        query: { match_all: {} },
+      });
+
+      expect(found.hits.hits[0]._source!.content).toBe('newer');
+    });
+  });
+
+  describe('when the whole batch is deletions of messages never indexed', () => {
+    it('should complete without failing the batch', async () => {
       await handleAndRefresh([event({ __deleted: true })]);
 
       expect(await indexedIds()).toEqual([]);
@@ -101,8 +142,8 @@ describe('@consumers/message-created/handler', () => {
     // records are still on the topic. Left unguarded they index under an
     // Elasticsearch-generated id, so every replay writes another copy — the
     // at-least-once pipeline stops being idempotent without a single error.
-    const malformed = (overrides: Partial<MessageCreatedEvent>) =>
-      ({ ...event(), ...overrides }) as MessageCreatedEvent;
+    const malformed = (overrides: Partial<MessageChangeEvent>) =>
+      ({ ...event(), ...overrides }) as MessageChangeEvent;
 
     it('should index the sound records and skip the rest', async () => {
       await handleAndRefresh([

@@ -1,5 +1,5 @@
 import { MessageSearchDocument } from '@/infra/elasticsearch/message-search.index';
-import { MessageCreatedEvent } from './message-created.event';
+import { MessageChangeEvent } from './message-changed.event';
 
 /**
  * Narrows a change event down to what the index maps, dropping Debezium's own
@@ -10,7 +10,7 @@ import { MessageCreatedEvent } from './message-created.event';
  * document. This function is the only place the two shapes meet.
  */
 export const toSearchDocument = (
-  event: MessageCreatedEvent,
+  event: MessageChangeEvent,
 ): MessageSearchDocument => ({
   messageId: event._id,
   tenantId: event.tenantId,

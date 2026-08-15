@@ -47,14 +47,17 @@ We add `tenantId` (required for multi-tenancy).
 | D9 | **No `@index()` decorators on models** | Declaring in two places invites drift. Models carry a comment pointing at the owning migration |
 | D10 | **Migrations do not auto-run on boot** | Multiple processes would race; index builds can block. `yarn migrate:up` is a separate deploy step |
 | D11 | **CDC via Debezium** instead of a transactional outbox | Only one write happens, so there is no dual-write gap. Removes the outbox collection, the transaction, and the relay process |
-| D12 | **Topic key = `conversationId`** via an SMT chain (not `_id`, not `tenantId:conversationId`) | Kafka only orders within a partition, and `partition = hash(key) % n`. A key unique per record (`_id`) scatters a conversation across partitions and gives up ordering entirely. `conversationId` groups a conversation onto one partition, so one consumer processes it sequentially. Adding `tenantId` would not improve distribution (ObjectIds are already globally unique), complicates the SMT, and worsens hot-partition risk. Not strictly required by today's consumer, but it is the right answer to the graded item and re-keying a live topic later is expensive. Producer must run with `enable.idempotence=true` or retries can still reorder |
+| D12 | **Topic key = `conversationId`** via an SMT chain (not `_id`, not `tenantId:conversationId`) | Kafka only orders within a partition, and `partition = hash(key) % n`. A key unique per record (`_id`) scatters a conversation across partitions and gives up ordering entirely. `conversationId` groups a conversation onto one partition, so one consumer processes it sequentially. Adding `tenantId` would not improve distribution (ObjectIds are already globally unique), complicates the SMT, and worsens hot-partition risk. Not strictly required by today's consumer, but it is the right answer to the graded item and re-keying a live topic later is expensive. **Correction, verified on the running stack in M3.2:** the Connect worker runs with `enable.idempotence=false`, so this requirement is *not* met — yet ordering holds anyway, because the same worker defaults to `max.in.flight.requests.per.connection=1`, and a retry cannot be overtaken when only one request is in flight. The cost of idempotence being off is duplicates, not reordering, and duplicates are already harmless here: the document id is the message id, so a redelivered record overwrites. The exposure is that this rests on a default nobody chose, and `max.in.flight` is the first knob raised to speed a producer up — at 5 with idempotence off, ordering breaks silently. Setting `producer.override.enable.idempotence=true` on the connector makes the higher value safe and removes the duplicates as well |
 | D21 | **Accept the hot-partition risk that comes with D12** — no bucket-sharding, no fallback keying | Quantified in [back-of-envelope.md](./back-of-envelope.md): with the bulk consumer of D22, one conversation saturates its partition at roughly **400,000 users typing continuously at once**, and Kafka itself only at ~600,000. Ordinary messaging never approaches this; only live-stream chat does, and that is a different product. Mitigations (bucketed composite key, dedicated topic for hot conversations) are documented in ADR-002b but deliberately not built — they would trade away per-conversation ordering to solve a problem this workload does not have |
 | D23 | **pnpm rather than yarn** | Faster installs. Its stricter resolution also surfaced three type dependencies the hoisted layout was masking. `node-linker=hoisted` is set in `.npmrc` because typegoose and @suites both assume a flat tree |
 | D25 | **TypeScript 6.0.3** — the newest release the toolchain actually supports | 7.x is the Go rewrite and does not expose the JavaScript compiler API ts-jest needs: it fails at `globalSetup`, taking all 71 tests with it. It also sits outside typescript-eslint's peer range (`<6.1.0`). 6.0.3 is inside both peer ranges and passes typecheck, build, lint and the full suite. Adopting it required three config changes TypeScript 6 makes mandatory: `baseUrl` removed in favour of relative `paths`, `types` named explicitly (auto-discovery of `@types/*` is gone), and `rootDir` stated rather than inferred (TS5011). Verified empirically, not assumed |
 | D32 | ~~Rename `_id` to `id` before publishing~~ — **reverted** | The connector briefly carried a `ReplaceField$Value` transform so the wire shape never spelled the primary key Mongo's way. Reverted: the topic has exactly one consumer, our own indexer, inside the bounded context that D13 already accepted coupling within. Renaming one field while `__deleted`, epoch-millisecond dates and the rest of the document stay in Mongo's shape is a half-measure that buys nothing and adds an SMT to get wrong. `_id` never reaching an *API* boundary still holds — that is enforced by the DTOs, which is where it belongs. If a consumer outside this context ever subscribes, the answer is a second curated topic, not a cosmetic rename on this one |
-| D33 | **Operational scripts are TypeScript, run through ts-node** | Bash was unreadable and, more usefully, could not import from `src`. The register script now injects `KafkaTopic.MessageCreated` and `MESSAGE_CREATED_PARTITIONS` into the connector config at registration time — the two keys are absent from the JSON, so the topic name has one source of truth and the producer cannot drift from the consumer. That removes the duplication a deleted config test had been pointlessly guarding. Scripts sit outside the app's `rootDir`, so they get their own `tsconfig.scripts.json`, listed in `pnpm typecheck` and in eslint's project list |
+| D33 | **Operational scripts are TypeScript, run through ts-node** | Bash was unreadable and, more usefully, could not import from `src`. The register script now injects `KafkaTopic.MessageChanged` and `MESSAGE_CHANGED_PARTITIONS` into the connector config at registration time — the two keys are absent from the JSON, so the topic name has one source of truth and the producer cannot drift from the consumer. That removes the duplication a deleted config test had been pointlessly guarding. Scripts sit outside the app's `rootDir`, so they get their own `tsconfig.scripts.json`, listed in `pnpm typecheck` and in eslint's project list |
 | D34 | **Incremental build state lives inside `dist`**, not at the project root | `prebuild` wipes `dist`; a `.tsbuildinfo` outside it survives, and tsc then skips emitting files whose outputs it believes are still there. The result is a `dist` missing most of the application, produced by a command that exits 0 — the failure only appears as `MODULE_NOT_FOUND` at start. Pairing the cache with the directory it describes makes the two impossible to disagree. `tsconfig.json` runs only with `--noEmit`, so its cache describes nothing and sits in `node_modules/.cache` |
 | D35 | **A record missing `_id`, `tenantId` or `conversationId` is dropped by the consumer and refused by the index** | Two layers because they answer different questions. The consumer *drops* — a record shaped by an older transform chain must not fail its batch forever and wedge every message behind it on that partition — and logs what it skipped. The index *throws*, because indexing without a document id is a broken invariant, not a data condition: Elasticsearch generates one, the write succeeds, and the redelivery that was supposed to overwrite writes a second copy instead. The at-least-once pipeline stops being idempotent with nothing reporting it. Found in M3.2 by replaying real topic records, not by a test — every fixture had been well-formed |
+| D36 | **One Elasticsearch operation per change event, applied in the order the events arrived** — a create and an update both become `index`, a deletion becomes `delete` | `create` rejects an id that already exists (409), which in an at-least-once pipeline turns every redelivery into a failed batch and a retry loop. `update` merges instead of replacing and 404s when the document is absent — real after a reindex, or once the create has aged off the topic. `index` states the only intent that matters for a read model: make the document equal this. The alternative considered was collapsing a batch to one write per message id, which is order-independent by construction and slightly cheaper; rejected because it requires every event to carry a full post-image forever, and it discards the per-event stream anything else reacting to a change would need. For this workload the two produce the same bulk body in almost every batch — nearly all events are inserts with distinct ids |
+| D37 | **Ordering is a chain, and two of its links are configuration** | Verified end to end in M3.2: the change stream is totally ordered at source; `conversationId` as the record key puts a message's whole history on one partition; one partition is read by one consumer; `batch.messages` is offset-ordered; `applyWrites` preserves array order; and Elasticsearch applies bulk actions in sequence per id — the last of which was measured, not assumed (reversing two actions on one id reverses the outcome). The configuration links are `max.in.flight.requests.per.connection` on the producer, now backed by `producer.override.enable.idempotence=true` so a higher value stays safe, and the array order inside `applyWrites`, which is stated in its doc comment and locked by two specs that fail if the operations are grouped or reordered |
+| D38 | **Kafka topics are created by a deploy step (`pnpm kafka:create-topics`), not by whoever gets there first** | The connector creates the topic when it publishes its first record, which is later than the consumer's first subscribe — so a fresh environment killed the consumer with `UNKNOWN_TOPIC_OR_PARTITION` before any message existed. Broker-side auto-creation is worse: it would make the topic with the broker's default partition count instead of the six that per-conversation ordering depends on. Same reasoning as indexes in migrations (D8) and the Elasticsearch mapping: provisioning is a deploy step, and a process that finds its topology missing should fail loudly rather than improvise one |
 | D30 | **Collection names are pinned on the model, not derived from the class name** | Typegoose pluralises the class, so `MessageModel` became `messagemodels` while the migration indexed `messages`. The application ran full collection scans and nothing complained — and `migrations.spec.ts` passed *vacuously*, because it explained a query against the hardcoded `messages`, an empty collection that did have the index. IXSCAN on an empty collection is still IXSCAN. The spec now derives the name from `repository.collectionName`, so an assertion can never again be aimed at a collection the application does not use. Found by M2: Debezium was watching `messaging.messages` and no event ever arrived |
 | D31 | **`migrate-mongo-config.js` loads `.env` and refuses to default the connection string** | The CLI does not load `.env`, so `MONGO_URI` was undefined and the config silently fell back to `mongodb://localhost:27017/messaging` — an unrelated MongoDB that happened to be listening on the developer's machine. `pnpm migrate:up` created a database and an index inside another project's data store, and reported success. Tests never caught it because the harness sets `MONGO_URI` programmatically; only the CLI path was broken. There is now no default at all: a missing `MONGO_URI` throws with an explanation, because guessing which database to migrate is never the safe choice |
 | D29 | **A conversation needs at least two distinct participants** | Two very different requests used to produce identical results: `participantIds: []` (a client that forgot to fill the list) and `participantIds: ['alice']` (a deliberate note-to-self) both answered 201 with a conversation containing only the caller. The API could not tell a bug from an intention. The rule cannot live in the DTO, because the creator is merged in and duplicates collapsed afterwards — the use case is the first point where membership is final, which is also what turns a previously dead guard into a reachable one: its old test passed `creatorId: ''`, a state `JwtStrategy` makes impossible. So the DTO now rejects an empty array (`@ArrayMinSize(1)`, a 400 naming the field) and the use case rejects a final membership below `MIN_CONVERSATION_PARTICIPANTS`. Note-to-self is a real feature in other products; supporting it is a one-line change to that constant, and doing it deliberately beats arriving at it by accident |
@@ -104,7 +107,7 @@ POST /api/messages
 Debezium MongoDB connector
   transforms: unwrap → rekey → extractKey → route
   ▼
-Kafka topic  messaging.message-created.v1   (6 partitions, key = conversationId)
+Kafka topic  messaging.message-changed.v1   (6 partitions, key = conversationId)
   ▼
 consumer group  message-search-indexer
   ├─ ES index into alias messages-{tenantId}, _id = messageId    ← idempotent upsert
@@ -189,7 +192,7 @@ src/
     message/get-conversation-messages/
     message/search-conversation-messages/
   consumers/
-    message-created/               @EventPattern handler
+    message-changed/               eachBatch handler
 
   test/
     test-helper/                   three modes, ported to Mongo
@@ -264,14 +267,14 @@ without Kafka or ES**
 - Verify the topic receives the right shape, the right key, and the right name
 - Capture a real event from compose (recorded in §M2 below)
 
-**Done when:** inserting into Mongo produces an event on `messaging.message-created.v1`
+**Done when:** inserting into Mongo produces an event on `messaging.message-changed.v1`
 keyed by `conversationId`
 
 **Verified on a running stack**, not assumed:
 
 | Check | Result |
 |---|---|
-| Topic name after `RegexRouter` | `messaging.message-created.v1` |
+| Topic name after `RegexRouter` | `messaging.message-changed.v1` |
 | Partitions | 6 |
 | Record key | the conversation id as a plain hex string |
 | Ordering | three messages of one conversation all landed on partition 2 |
@@ -371,7 +374,7 @@ their alias, and indexing the same message twice leaves one document
 
 #### M3.2 — The CDC consumer
 
-- `MessageCreatedEvent`: the TypeScript contract for the Debezium record,
+- `MessageChangeEvent`: the TypeScript contract for the Debezium record,
   deliberately not written in M2, where nothing consumed one
 - `main.consumer.ts` as a second entrypoint over the same image
 - **Batch-shaped, not message-shaped**: `eachBatch` feeding `indexMany`.
@@ -386,22 +389,29 @@ their alias, and indexing the same message twice leaves one document
 **Done when:** posting a message through the API makes it appear in Elasticsearch
 via compose, with no manual step in between
 
+Extended after the first cut to carry the whole change stream rather than inserts
+alone — the topic was renamed from `message-created` once an update was shown to
+travel over it, and deletions now remove the document instead of being dropped
+(D36).
+
 **Verified on a running stack**, not assumed:
 
 | Check | Result |
 |---|---|
-| `POST /api/v1/messages` → searchable in Elasticsearch | ~3s, no manual step |
+| `POST /api/v1/messages` → searchable in Elasticsearch | ~2s, no manual step |
+| Editing the message in MongoDB | the indexed document is replaced in place |
+| Deleting it | the document is removed; the connector stays RUNNING |
 | Document id | the message id, so redelivery overwrites |
 | Tenant isolation end to end | two tenants posted identical text; each alias returned only its own |
 | Unmapped fields | none; `dynamic: strict` still reports the seven mapped fields |
-| Replay | consumer group offsets reset to earliest **twice**; 9 records reprocessed each time, document count stayed 6 |
+| Replay | offsets reset to earliest twice; the index settled on the same three documents both times, and folding the topic's own history by hand predicts exactly those three |
 
 The replay check is the one worth reading twice, because the first attempt at it
 proved nothing: restarting the consumer resumes from committed offsets, so
 `fromBeginning: true` never applies and no record is re-read. Resetting the group's
 offsets is what actually replays.
 
-Three defects surfaced, all of them latent before M3.2 gave them something to break:
+Six defects surfaced, all of them latent before M3.2 gave them something to break:
 
 **The incremental build emitted a partial `dist`.** `incremental: true` wrote
 `tsconfig.build.tsbuildinfo` at the project root while `prebuild` removed only
@@ -423,6 +433,33 @@ wrote *another* copy. `dynamic: strict` does not catch it, because the field is
 absent rather than unknown, and an absent `tenantId` would likewise route to
 `messages-undefined`. Every unit test had passed, because every fixture was
 well-formed; real data on the topic is what exposed it (D35).
+
+**A deletion killed change data capture outright.** Not "deletes were ignored" — the
+connector task died and captured nothing further, of any operation, until its
+offsets were reset by hand. A MongoDB delete carries only the document key, so the
+`ValueToKey` transform re-keying records by `conversationId` threw on a record it
+re-read on every restart. Fixed with pre-images, which are two settings that only
+work together: the `collMod` in
+`migrations/20260815000000-enable-message-change-stream-pre-images.js`, and
+`capture.mode` on the connector. The mode is
+`change_streams_update_full_with_pre_image` and not `change_streams_with_pre_image`:
+the latter attaches the *before* image and drops the *after* one, so deletes start
+working and updates break instead — which is precisely what happened, because the
+probe that chose the mode had only exercised an insert and a delete.
+
+**A delete addressed to the concrete index silently does nothing.** Documents are
+written through an alias carrying `index_routing`, so a delete sent without that
+routing computes the shard from the id, looks in the wrong one, and answers
+`not_found` while the document stays put — and `not_found` is not an error, so the
+batch succeeds and the offsets commit. A message the user deleted would remain
+searchable for good. Invisible under `number_of_shards: 1`, which is why the test
+index is created with three: the one place the suite deliberately differs from
+production, and it differs by being stricter.
+
+**The consumer could not start on a fresh environment.** The topic was being created
+as a side effect of the connector's first publish, which happens after the consumer
+subscribes, so the process died with `UNKNOWN_TOPIC_OR_PARTITION` and stayed down.
+Topic creation is now its own deploy step (D38).
 
 #### M3.3 — The search endpoint
 

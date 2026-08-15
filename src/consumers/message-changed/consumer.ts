@@ -8,8 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { Consumer, EachBatchPayload, Kafka } from 'kafkajs';
 
 import { KafkaConsumerGroup, KafkaTopic } from '@/common/enums';
-import { MessageCreatedHandler } from './handler';
-import { MessageCreatedEvent } from './message-created.event';
+import { MessageChangeHandler } from './handler';
+import { MessageChangeEvent } from './message-changed.event';
 
 /**
  * Subscribes to the CDC topic and hands whole batches to the handler.
@@ -21,15 +21,15 @@ import { MessageCreatedEvent } from './message-created.event';
  * get the batch that bulk indexing needs.
  */
 @Injectable()
-export class MessageCreatedConsumer
+export class MessageChangeConsumer
   implements OnModuleInit, OnApplicationShutdown
 {
-  private readonly logger = new Logger(MessageCreatedConsumer.name);
+  private readonly logger = new Logger(MessageChangeConsumer.name);
   private consumer?: Consumer;
 
   constructor(
     private readonly config: ConfigService,
-    private readonly handler: MessageCreatedHandler,
+    private readonly handler: MessageChangeHandler,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -47,9 +47,13 @@ export class MessageCreatedConsumer
 
     await this.consumer.connect();
     await this.consumer.subscribe({
-      topic: KafkaTopic.MessageCreated,
+      topic: KafkaTopic.MessageChanged,
       fromBeginning: true,
     });
+    // Subscribing to a topic that does not exist fails this process on purpose.
+    // The alternative is auto-creation with the broker's default partition count,
+    // which would silently give up the per-conversation ordering six partitions
+    // buy (D12). `pnpm kafka:create-topics` is the step that should have run.
 
     await this.consumer.run({
       // Offsets are resolved by hand below, once the batch is durably indexed.
@@ -58,7 +62,7 @@ export class MessageCreatedConsumer
     });
 
     this.logger.log(
-      `Consuming ${KafkaTopic.MessageCreated} as ${KafkaConsumerGroup.MessageSearchIndexer}`,
+      `Consuming ${KafkaTopic.MessageChanged} as ${KafkaConsumerGroup.MessageSearchIndexer}`,
     );
   }
 
@@ -82,7 +86,7 @@ export class MessageCreatedConsumer
 
     const events = payload.batch.messages
       .map((message) => this.parse(message.value))
-      .filter((event): event is MessageCreatedEvent => event !== null);
+      .filter((event): event is MessageChangeEvent => event !== null);
 
     await this.handler.handleBatch(events);
 
@@ -104,13 +108,13 @@ export class MessageCreatedConsumer
    * A record that cannot be parsed is dropped with a log rather than throwing:
    * one malformed message must not wedge the partition behind it forever.
    */
-  private parse(value: Buffer | null): MessageCreatedEvent | null {
+  private parse(value: Buffer | null): MessageChangeEvent | null {
     if (!value) {
       return null;
     }
 
     try {
-      return JSON.parse(value.toString()) as MessageCreatedEvent;
+      return JSON.parse(value.toString()) as MessageChangeEvent;
     } catch (error) {
       this.logger.error('Skipping an unparseable record', error);
       return null;

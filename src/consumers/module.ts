@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 
 import { SearchModule } from '@/infra/elasticsearch/module';
-import { MessageCreatedConsumer } from './message-created/consumer';
-import { MessageCreatedHandler } from './message-created/handler';
+import { MessageChangeConsumer } from './message-changed/consumer';
+import { MessageChangeHandler } from './message-changed/handler';
 
 @Module({
   imports: [SearchModule],
-  providers: [MessageCreatedConsumer, MessageCreatedHandler],
+  providers: [MessageChangeConsumer, MessageChangeHandler],
 })
 export class ConsumersModule {}

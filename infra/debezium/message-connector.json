@@ -1,7 +1,7 @@
 {
   "_comment": [
     "The topic name and partition count are deliberately absent: scripts/register-debezium.ts",
-    "injects them from KafkaTopic / MESSAGE_CREATED_PARTITIONS so the wire contract has a",
+    "injects them from KafkaTopic / MESSAGE_CHANGED_PARTITIONS so the wire contract has a",
     "single source of truth and cannot drift from the consumer.",
     "Registered with: pnpm debezium:register"
   ],
@@ -10,33 +10,26 @@
     "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
     "mongodb.connection.string": "mongodb://mongo:27017/?replicaSet=rs0",
     "topic.prefix": "messaging",
-
     "database.include.list": "messaging",
     "collection.include.list": "messaging.messages",
-
-    "capture.mode": "change_streams_update_full",
+    "capture.mode": "change_streams_update_full_with_pre_image",
     "snapshot.mode": "no_data",
-
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
     "key.converter.schemas.enable": "false",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
-
     "transforms": "unwrap,rekey,extractKey,route",
-
     "transforms.unwrap.type": "io.debezium.connector.mongodb.transforms.ExtractNewDocumentState",
     "transforms.unwrap.delete.tombstone.handling.mode": "rewrite",
-
     "transforms.rekey.type": "org.apache.kafka.connect.transforms.ValueToKey",
     "transforms.rekey.fields": "conversationId",
-
     "transforms.extractKey.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
     "transforms.extractKey.field": "conversationId",
-
     "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
     "transforms.route.regex": "messaging\\.messaging\\.messages",
-
     "topic.creation.enable": "true",
-    "topic.creation.default.replication.factor": "1"
+    "topic.creation.default.replication.factor": "1",
+    "producer.override.enable.idempotence": "true",
+    "producer.override.acks": "all"
   }
 }

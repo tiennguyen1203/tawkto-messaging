@@ -2,12 +2,13 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M3.2 — messages reach Elasticsearch end to end.** Conversations and
-messages can be created and listed with cursor pagination, scoped to a tenant by the
-repository rather than by its callers. Every insert reaches Kafka through Debezium
-without the application dual-writing, and the consumer indexes whole batches behind a
-filtered alias per tenant — a message posted through the API is in Elasticsearch about
-three seconds later. What remains is the search endpoint (M3.3) that queries it. See
+**Status: M3.2 — message changes reach Elasticsearch end to end.** Conversations
+and messages can be created and listed with cursor pagination, scoped to a tenant by
+the repository rather than by its callers. Every change reaches Kafka through Debezium
+without the application dual-writing, and the consumer applies whole batches behind a
+filtered alias per tenant: a message posted through the API is in Elasticsearch about
+two seconds later, editing it replaces the indexed copy, and deleting it removes it.
+What remains is the search endpoint (M3.3) that queries it. See
 [docs/PLAN.md](docs/PLAN.md) for the milestones,
 [docs/architecture.md](docs/architecture.md) for what is wired to what, and
 [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
@@ -45,17 +46,18 @@ cp .env.example .env
 docker compose up -d mongo redis kafka kafka-connect elasticsearch
 docker compose ps            # wait for all five to be healthy
 
-pnpm migrate:up              # creates the MongoDB indexes
-pnpm es:apply-templates      # creates the Elasticsearch index and its mapping
-pnpm debezium:register       # installs the CDC connector
+pnpm migrate:up              # MongoDB indexes and change stream pre-images
+pnpm es:apply-templates      # the Elasticsearch index and its mapping
+pnpm kafka:create-topics     # the topic, with the partition count ordering needs
+pnpm debezium:register       # the CDC connector
 
 pnpm start:dev               # the API
 pnpm start:consumer          # the indexer, in a second terminal
 ```
 
-The two provisioning steps are separate commands rather than boot-time work for the
-same reason: replicas would race each other, and a mapping or an index that fails to
-apply should stop a deploy rather than a request. Both are idempotent.
+The provisioning steps are separate commands rather than boot-time work for the same
+reason: replicas would race each other, and a mapping, an index or a topic that fails
+to apply should stop a deploy rather than a request. All are idempotent.
 
 `KAFKA_BROKERS` points at **9094**, the listener compose publishes to the host. `9092`
 is the internal one, reachable only from another container — a consumer started with
@@ -89,7 +91,7 @@ there is no window in which the message is stored but the event is lost — the
 failure a dual write cannot avoid. See ADR-002 for what this costs.
 
 ```
-POST /messages ─► mongo (one insert) ─► oplog ─► Debezium ─► messaging.message-created.v1
+POST /messages ─► mongo (one insert) ─► oplog ─► Debezium ─► messaging.message-changed.v1
                                                               6 partitions, key = conversationId
 ```
 
@@ -98,7 +100,7 @@ so a single consumer processes them in order. Watch the stream with:
 
 ```bash
 docker exec techbank-interview-2-kafka-1 kafka-console-consumer \
-  --bootstrap-server kafka:9092 --topic messaging.message-created.v1 \
+  --bootstrap-server kafka:9092 --topic messaging.message-changed.v1 \
   --from-beginning --property print.key=true --property print.partition=true
 ```
 
@@ -107,8 +109,13 @@ as epoch milliseconds. The document keeps Mongo's own field
 names, `_id` included: the only consumer is our indexer, inside the same bounded
 context, so a cosmetic rename would buy nothing. `_id` is kept out of the *API*
 by the response DTOs instead. A sample record is recorded in
-[docs/PLAN.md](docs/PLAN.md); M3.2 captures a fresh one as a fixture so the consumer
-specs can run without standing Kafka Connect up inside jest.
+[docs/PLAN.md](docs/PLAN.md).
+
+The topic is named `changed`, not `created`, because it carries the whole change
+stream: a create, an edit and a deletion all travel over it, keyed by conversation so
+one message's history stays on one partition and in order. The consumer turns each
+event into one Elasticsearch operation in that same order — writes replace the
+document whole, deletions remove it.
 
 ### Processes
 
@@ -226,7 +233,8 @@ which resolves through a string token the scanner cannot follow.
 | `pnpm build` | Compile with `tsc` (not the Nest CLI — see D26 in the plan) |
 | `pnpm start:dev` | HTTP API with watch mode |
 | `pnpm start:consumer` | Kafka → Elasticsearch indexer |
-| `pnpm migrate:up` / `migrate:down` | Apply / roll back MongoDB index migrations |
+| `pnpm migrate:up` / `migrate:down` | Apply / roll back MongoDB migrations |
+| `pnpm kafka:create-topics` | Create the topics with the right partition count (idempotent) |
 | `pnpm es:apply-templates` | Apply the Elasticsearch mapping and create the index (idempotent) |
 | `pnpm migrate:create <name>` | Scaffold a migration |
 | `pnpm debezium:register` | Install or update the CDC connector (idempotent) |

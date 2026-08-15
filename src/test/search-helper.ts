@@ -35,6 +35,25 @@ export class SearchHelper {
     return `${this.namespace}-${name}`;
   }
 
+  /**
+   * A document id no other spec file will use.
+   *
+   * Namespacing the tenant is not enough: `_id` is global to the index, so two
+   * files both writing `m1` overwrite each other's document, and the alias filter
+   * then hides the survivor from whichever tenant lost. That failure reads as an
+   * empty result set, not as a conflict.
+   */
+  id(name: string): string {
+    return `${this.namespace}-${name}`;
+  }
+
+  /** Strips the namespace back off, so assertions can name ids plainly. */
+  plain(id: string): string {
+    return id.startsWith(`${this.namespace}-`)
+      ? id.slice(this.namespace.length + 1)
+      : id;
+  }
+
   async setUp(): Promise<void> {
     const node = SearchContainer.getNode();
     process.env.ELASTICSEARCH_NODE = node;
@@ -53,8 +72,25 @@ export class SearchHelper {
       ...(template as object),
     });
 
-    if (!(await this.client.indices.exists({ index: MESSAGES_INDEX }))) {
-      await this.client.indices.create({ index: MESSAGES_INDEX });
+    // Spec files run in parallel workers, so two of them can find the index
+    // missing and both try to create it. Losing that race is not a failure —
+    // the loser wanted the index to exist, and it does.
+    try {
+      await this.client.indices.create({
+        index: MESSAGES_INDEX,
+        // The one place the tests deliberately differ from production, which
+        // ships a single shard. Routing only exists across shards: with one,
+        // a write addressed to the concrete index instead of the tenant's
+        // alias lands on the same shard either way and every test still
+        // passes, while in a sharded cluster the same code answers
+        // `not_found` and leaves a deleted message searchable. Three shards
+        // make that observable here instead of in production.
+        settings: { number_of_shards: 3 },
+      });
+    } catch (error) {
+      if (!/resource_already_exists/.test(JSON.stringify(error))) {
+        throw error;
+      }
     }
   }
 

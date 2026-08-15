@@ -1,6 +1,6 @@
 # Back-of-the-Envelope: Hot Partition Capacity
 
-Partitioning the `messaging.message-created.v1` topic by `conversationId` (decision D12)
+Partitioning the `messaging.message-changed.v1` topic by `conversationId` (decision D12)
 buys per-conversation ordering at the cost of capping one conversation's throughput at a
 single partition and a single consumer instance. This document estimates where that cap
 actually sits, so the "hot partition" risk in ADR-002b is bounded by numbers rather than

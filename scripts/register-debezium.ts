@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { MESSAGE_CREATED_PARTITIONS } from '@/common/constants';
+import { MESSAGE_CHANGED_PARTITIONS } from '@/common/constants';
 import { KafkaTopic } from '@/common/enums';
 
 type ConnectorFile = {
@@ -57,8 +57,8 @@ const waitForConnect = async (attempts = 60): Promise<void> => {
 const buildConfig = (file: ConnectorFile): Record<string, string> => ({
   ...file.config,
   // Injected rather than duplicated in the JSON.
-  'transforms.route.replacement': KafkaTopic.MessageCreated,
-  'topic.creation.default.partitions': String(MESSAGE_CREATED_PARTITIONS),
+  'transforms.route.replacement': KafkaTopic.MessageChanged,
+  'topic.creation.default.partitions': String(MESSAGE_CHANGED_PARTITIONS),
 });
 
 const statusOf = async (name: string): Promise<string> => {
@@ -96,8 +96,8 @@ const main = async (): Promise<void> => {
   }
 
   console.log(
-    `Registered '${file.name}' -> ${KafkaTopic.MessageCreated} ` +
-      `(${MESSAGE_CREATED_PARTITIONS} partitions). Waiting for RUNNING ...`,
+    `Registered '${file.name}' -> ${KafkaTopic.MessageChanged} ` +
+      `(${MESSAGE_CHANGED_PARTITIONS} partitions). Waiting for RUNNING ...`,
   );
 
   for (let i = 0; i < 30; i += 1) {

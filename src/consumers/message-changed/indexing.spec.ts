@@ -1,9 +1,9 @@
 import { toSearchDocument } from './indexing';
-import { MessageCreatedEvent } from './message-created.event';
+import { MessageChangeEvent } from './message-changed.event';
 
 const event = (
-  overrides: Partial<MessageCreatedEvent> = {},
-): MessageCreatedEvent => ({
+  overrides: Partial<MessageChangeEvent> = {},
+): MessageChangeEvent => ({
   _id: '6a7fd7adba0e4ad4a76ffabc',
   tenantId: 'tenant-a',
   conversationId: '6a7fd7adba0e4ad4a76ffab9',
@@ -17,7 +17,7 @@ const event = (
   ...overrides,
 });
 
-describe('@consumers/message-created/indexing', () => {
+describe('@consumers/message-changed/indexing', () => {
   describe('#toSearchDocument', () => {
     describe('when mapping an event the connector produced', () => {
       it('should carry only the fields the index maps', () => {
