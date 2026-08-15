@@ -23,7 +23,7 @@ flowchart TD
     end
 
     mongo[("MongoDB — replica set rs0<br/>conversations · messages<br/>indexes owned by migrations")]
-    redis[("Redis<br/>health-checked, caches nothing yet")]
+    redis[("Redis<br/>conversation summaries, 60s TTL<br/>key carries the tenant")]
     dbz["Debezium on Kafka Connect<br/>unwrap envelope · re-key by conversation"]
     kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-changed.v1<br/>6 partitions · key = conversationId"]]
     consumer["Consumer — src/main.consumer.ts<br/>eachBatch → one ordered bulk request<br/>create · update · delete<br/>document id = message id, so replay overwrites"]
@@ -34,7 +34,7 @@ flowchart TD
     ctl --> uc
     uc --> repo
     repo -->|one insert and keyset read| mongo
-    repo -.->|liveness only| redis
+    repo -->|conversation summary, keyed by tenant| redis
     mongo -->|oplog| dbz
     dbz -->|publish| kafka
     kafka -->|one partition per conversation| consumer
@@ -49,7 +49,7 @@ flowchart TD
 
     class client plain
     class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es,searchuc done
-    class redis wip
+    class redis done
 ```
 
 A message is written **once**, to MongoDB. Nothing publishes to Kafka on the
@@ -84,8 +84,7 @@ M3 is split so each part can be reviewed on its own: the schema alone first, the
 one thin slice at a time, each ending with something demonstrable. The reasoning
 is in [PLAN.md](./PLAN.md#search--m3-through-m34).
 
-Amber marks something narrower than work in progress: a part that exists and is
-proven, but that nothing in the running system calls yet.
+Nothing is amber: every component drawn above does work in the running system.
 
 ## Known gaps
 
@@ -102,9 +101,6 @@ enumerated — which is also why `lastMessageAt` was dropped rather than built: 
 would have been maintained for no reader. `GET /api/v1/conversations` ordered by
 recent activity is the natural next endpoint, and the one that would give it a
 purpose.
-
-**Redis caches nothing.** It is configured, health-checked and proven reachable,
-but no use case caches anything through it. Caching is optional in the brief.
 
 **The topic name is written twice.** `KafkaTopic.MessageChanged` is injected into
 the connector config by `scripts/register-debezium.ts`, so the producer cannot

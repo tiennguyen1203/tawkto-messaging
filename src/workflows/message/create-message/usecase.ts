@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Types } from 'mongoose';
 
 import { ConversationRepository } from '@/cores/repositories/conversation.repository';
 import { MessageRepository } from '@/cores/repositories/message.repository';
@@ -24,9 +25,13 @@ export class CreateMessageUseCase extends BaseUseCase<
   async handle(
     input: CreateMessageUseCaseTypes.Input,
   ): Promise<CreateMessageUseCaseTypes.Output> {
-    const conversation = await this.conversationRepository.findByIdInTenant(
-      input.conversationId,
-    );
+    // Cached: this read happens on every message posted, and returns the same
+    // answer every time for a conversation that is being used. The key is scoped
+    // to the tenant by the repository, not by this call.
+    const conversation =
+      await this.conversationRepository.findCachedSummaryInTenant(
+        input.conversationId,
+      );
 
     if (!conversation) {
       // Deliberately NOT_FOUND rather than a permission error: a conversation
@@ -49,7 +54,8 @@ export class CreateMessageUseCase extends BaseUseCase<
     // cannot live in a DTO.
     const created = await this.messageRepository.createOne({
       // No tenantId: the repository stamps it from the request context.
-      conversationId: conversation._id,
+      // The summary is a plain projection, so the id comes back as a string.
+      conversationId: new Types.ObjectId(conversation.id),
       senderId: input.senderId,
       content: input.content,
       // The server owns the clock — a client-supplied timestamp would let a

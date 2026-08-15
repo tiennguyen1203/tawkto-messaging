@@ -272,6 +272,4 @@ Stated because their absence is a decision, not an oversight.
 - **No tenant provisioning.** A tenant exists because a verified token says so. Per-tenant
   Elasticsearch aliases are consequently created on first write, which is the wrong
   place for them; [PLAN.md §10](docs/PLAN.md) records why and what it would take to move them.
-- **Redis caches nothing.** It is configured, health-checked and proven reachable,
-  and no use case reads through it. Caching is optional in the brief.
 - **No `lastMessageAt`, no unread counts, no read receipts, no attachments.**

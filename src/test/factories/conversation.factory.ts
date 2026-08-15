@@ -3,6 +3,7 @@ import { ClsService } from 'nestjs-cls';
 import { BaseRepository } from '@/common/base.repository';
 import { ConversationModel } from '@/cores/models/conversation.model';
 import { ConversationRepository } from '@/cores/repositories/conversation.repository';
+import { CachingService } from '@/infra/caching/service';
 import { ConnectionSingleton } from '@/infra/database/connection.singleton';
 import { BaseFactory } from './base.factory';
 
@@ -34,6 +35,16 @@ export class ConversationFactory extends BaseFactory<ConversationModel> {
     return new ConversationRepository(
       ConnectionSingleton.get(),
       anyTenantCls(this.tenantId),
+      // The factory seeds MongoDB and never reads through the cache. A stub that
+      // throws keeps seeding free of a cache dependency, and makes an accidental
+      // `factory.repository().findCachedSummaryInTenant(...)` say so.
+      {
+        getOrSet: () => {
+          throw new Error(
+            'ConversationFactory builds a repository for seeding, not for cached reads.',
+          );
+        },
+      } as unknown as CachingService,
     );
   }
 }

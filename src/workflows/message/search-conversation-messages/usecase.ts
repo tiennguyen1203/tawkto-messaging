@@ -29,9 +29,10 @@ export class SearchConversationMessagesUseCase extends BaseUseCase<
     // return an empty page instead, which reads to a client as "no matches" and
     // quietly hides the difference between an empty conversation and one that is
     // none of their business.
-    const conversation = await this.conversationRepository.findByIdInTenant(
-      input.conversationId,
-    );
+    const conversation =
+      await this.conversationRepository.findCachedSummaryInTenant(
+        input.conversationId,
+      );
 
     if (!conversation) {
       throw new NotFoundUseCaseError('Conversation not found.');
