@@ -66,8 +66,16 @@ the search branch, is still a plan.
 | M0 | Template ported to MongoDB: tenant-scoped repositories, stateless JWT, CLS, logging, health check, three-mode test harness | done |
 | M1 | Conversations and messages — cursor pagination, index migrations, authorisation, three endpoints | done |
 | M2 | Kafka in KRaft mode, Debezium connector, the SMT chain, topic keyed by conversation | done |
-| M3 | Consumer process, Elasticsearch mapping and per-tenant aliases, bulk indexing, the search endpoint | not started |
+| M3 | The Elasticsearch index schema — mapping, `dynamic: strict`, the apply step | not started |
+| M3.1 | Bulk writes into the index, behind per-tenant aliases | not started |
+| M3.2 | The consumer process that fills the index from the Kafka topic | not started |
+| M3.3 | `search_after` queries and the search endpoint | not started |
+| M3.4 | `lastMessageAt` on the conversation | not started |
 | M4 | README for a cold reader, ADRs, domain glossary | not started |
+
+M3 is split so each part can be reviewed on its own: the schema alone first, then
+one thin slice at a time, each ending with something demonstrable. The reasoning
+is in [PLAN.md](./PLAN.md#search--m3-through-m34).
 
 Nothing is mid-flight: M2 closed and M3 has not opened, so no component is
 genuinely in progress. Amber marks something narrower — a part that exists but
@@ -80,7 +88,7 @@ proven reachable, but no use case caches anything through it. Caching is optiona
 in the brief.
 
 **`pnpm start:consumer` is currently broken.** The script runs
-`node dist/main.consumer` and that file does not exist yet — it arrives with M3.
+`node dist/main.consumer` and that file does not exist yet — it arrives with M3.2.
 Nothing else references it, so the failure is confined to anyone who runs that
 one command.
 

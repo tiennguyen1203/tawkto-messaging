@@ -297,12 +297,12 @@ Partition:3  key="6a7f352caefeeac0e37bd99c"
 ```
 
 Recorded here rather than committed as a test fixture: nothing reads a fixture
-until M3 has a consumer, and committed test data that no test reads drifts from
+until M3.2 has a consumer, and committed test data that no test reads drifts from
 reality silently — change the SMT chain and the file becomes a lie with nothing
-to catch it. M3 captures a fresh one when there is something to assert against.
+to catch it. M3.2 captures a fresh one when there is something to assert against.
 
 The last three were open questions in the risk table; the ObjectId concern turned
-out to be unfounded, and the epoch-millis encoding is something M3's consumer has
+out to be unfounded, and the epoch-millis encoding is something M3.2's consumer has
 to convert. The topic name is duplicated between `KafkaTopic` and the connector JSON, and
 nothing automated catches them drifting apart — asserting one string equals
 another is not a test, it is the same configuration written twice. What catches
@@ -310,21 +310,102 @@ it is the end-to-end check above: post a message, watch the topic. Removing the
 duplication properly would mean generating the connector config from the enum at
 registration time, which is worth doing if the topology grows past one topic.
 
-### M3 — Consumer + Elasticsearch
+### Search — M3 through M3.4
 
-- ES client, `messages-*` index template, per-tenant filtered alias provisioning
-- Capture a fresh Debezium event as a fixture, and the TypeScript contract to go
-  with it — deliberately not written in M2, where nothing consumed either
-- `main.consumer.ts` with `@EventPattern` → idempotent upsert (`_id = messageId`)
-- **Bulk indexing** via the ES `_bulk` API, and `lastMessageAt` coalesced to one
-  conditional update per conversation per batch (D22) — this is the change that makes
-  the accepted hot-partition risk in D21 defensible, so it ships in the first cut rather
-  than being deferred as an optimization
-- `GET /conversations/:id/messages/search` backed by `search_after`
-- Tests: consumer via fixture · search integration
+Originally one milestone covering the consumer, the index and the search endpoint
+together. Split after the first attempt produced a diff too large to review in one
+sitting: a reviewer had to hold the Kafka wiring, the Elasticsearch mapping and an
+HTTP contract in their head at once to judge any one of them.
 
-**Done when:** posting a message makes it findable through search (verified via compose)
-and the tests are green
+Two rules decide where the cuts fall.
+
+**The schema comes first, alone.** It is configuration, not code — no branches, no
+logic, nothing a unit test could say anything about. What proves it is applying it
+to a running Elasticsearch and reading the mapping back, which is a step in a
+terminal, not a committed spec. Keeping it in its own part means that check is the
+only thing under review.
+
+**After that, nothing lands before its caller.** Each remaining part is a thin
+vertical slice that ends with something demonstrable end to end: the write path
+first, then the read path. That is why `indexMany` sits with the consumer that
+fills the index and `search` sits with the endpoint that queries it, rather than
+both arriving together as a finished "index layer" whose second half nothing calls
+for two more parts.
+
+#### M3 — The index schema
+
+- Elasticsearch in compose
+- `infra/elasticsearch/message-index.json`: the index template — field mappings,
+  `dynamic: strict`, `messages-v1` as the concrete index behind per-tenant aliases
+- `MESSAGES_INDEX` and `messageAliasFor()` as constants, so no alias name is ever
+  built by hand at a call site
+- `pnpm es:apply-templates`: applies the template and creates the index. A deploy
+  step rather than boot-time work, for the same reason migrations are — replicas
+  would race, and a bad mapping should stop a deploy rather than a request
+
+`dynamic: strict` is the load-bearing choice: without it, a field the mapping does
+not know is silently accepted and silently left unsearchable. With it, the write
+fails and the deploy is what breaks.
+
+No tests. There is no behaviour here yet — the index has no reader and no writer
+until M3.1.
+
+**Done when:** `pnpm es:apply-templates` against a running compose creates
+`messages-v1` with the intended mapping, running it a second time changes nothing,
+and a document carrying an unmapped field is rejected
+
+#### M3.1 — Writing to the index
+
+- `MessageSearchIndex.indexMany`: one `_bulk` request per batch, documents keyed by
+  message id, grouped so each tenant's writes go through its own alias
+- Per-tenant filtered alias provisioning, created on first write for a tenant
+- Test harness: an Elasticsearch testcontainer, applying the same template file
+  `es:apply-templates` uses — so a mapping change cannot pass the tests and fail in
+  compose
+- Tests: the index against a real Elasticsearch
+
+**Done when:** two tenants holding identical text each see only their own through
+their alias, and indexing the same message twice leaves one document
+
+#### M3.2 — The CDC consumer
+
+- `MessageCreatedEvent`: the TypeScript contract for the Debezium record,
+  deliberately not written in M2, where nothing consumed one
+- `main.consumer.ts` as a second entrypoint over the same image
+- **Batch-shaped, not message-shaped**: `eachBatch` feeding `indexMany`.
+  Per-document indexing tops out near 220 messages a second and would become the
+  pipeline's ceiling long before Kafka is (D22, docs/back-of-envelope.md) — this is
+  what makes the hot-partition risk accepted in D21 defensible, so it ships in the
+  first cut rather than as a later optimization
+- Offsets resolved only after the batch is durably indexed. The replay that follows
+  a crash is safe because the document id is the message id, so it overwrites
+- Tests: the handler over a batch, including redelivery and a mixed-tenant batch
+
+**Done when:** posting a message through the API makes it appear in Elasticsearch
+via compose, with no manual step in between
+
+#### M3.3 — The search endpoint
+
+- `MessageSearchIndex.search`: `search_after` over a sort with a tiebreaker, so
+  paging cannot repeat or drop a hit when scores tie
+- `GET /conversations/:id/messages/search?q=`
+- The conversation is resolved in Mongo first, so one belonging to another tenant
+  is a 404 rather than an empty page
+- Tests: the query against a real Elasticsearch · use case · controller
+
+**Done when:** a term posted through `POST /api/messages` is findable through the
+endpoint, another tenant's identical text is not, and paging walks every hit
+exactly once
+
+#### M3.4 — `lastMessageAt`
+
+- Coalesced to one conditional update per conversation per batch, not one per
+  message (D22)
+- The update is conditional on the new timestamp being later, so out-of-order
+  redelivery cannot move a conversation backwards
+
+**Done when:** a batch spanning several conversations issues one update each, and
+replaying it changes nothing
 
 ### M4 — Documentation
 
