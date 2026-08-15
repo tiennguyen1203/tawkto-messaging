@@ -2,10 +2,11 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M1 — messaging domain over MongoDB.** Conversations and messages can be
-created and listed with cursor pagination, scoped to a tenant and enforced by the
-domain rather than by the callers. Kafka (M2) and Elasticsearch search (M3) are not
-wired yet; see [docs/PLAN.md](docs/PLAN.md) for the milestones and
+**Status: M2 — messages stream to Kafka via CDC.** Conversations and messages can
+be created and listed with cursor pagination, scoped to a tenant by the repository
+rather than by its callers; every insert reaches Kafka through Debezium without the
+application dual-writing. The Elasticsearch consumer and search endpoint (M3) are
+not wired yet; see [docs/PLAN.md](docs/PLAN.md) for the milestones and
 [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
 the partitioning decisions.
 
@@ -36,14 +37,13 @@ exists. A known conversation with a non-participant sender answers **403**.
 pnpm install
 cp .env.example .env
 
-# MongoDB (single-node replica set) and Redis.
-docker compose up -d mongo redis
+# MongoDB (single-node replica set), Redis, Kafka and Debezium.
+# Kafka Connect is a JVM and takes ~60s to report healthy.
+docker compose up -d mongo redis kafka kafka-connect
+docker compose ps            # wait for all four to be healthy
 
-# Wait for the replica set to elect a primary — the healthcheck does rs.initiate()
-# on first boot, which takes a few seconds.
-docker compose ps
-
-pnpm migrate:up      # applies index migrations
+pnpm migrate:up              # creates the indexes
+pnpm debezium:register       # installs the CDC connector
 pnpm start:dev
 ```
 
@@ -58,9 +58,37 @@ does not collide with other projects already using the standard ports. Override 
 
 ### Why a replica set for a single node
 
-Change streams — the CDC source that will feed Kafka in M2 — are unavailable on a
-standalone MongoDB. Running one node as `rs0` is the smallest configuration that
-supports them.
+Change streams — the source Debezium tails — are unavailable on a standalone
+MongoDB. Running one node as `rs0` is the smallest configuration that supports
+them.
+
+### Change data capture instead of dual writes
+
+`POST /api/v1/messages` performs exactly one write, to MongoDB. Nothing publishes
+to Kafka on the request path. Debezium tails the oplog and produces the event, so
+there is no window in which the message is stored but the event is lost — the
+failure a dual write cannot avoid. See ADR-002 for what this costs.
+
+```
+POST /messages ─► mongo (one insert) ─► oplog ─► Debezium ─► messaging.message-created.v1
+                                                              6 partitions, key = conversationId
+```
+
+Keying by `conversationId` puts all of a conversation's messages on one partition,
+so a single consumer processes them in order. Watch the stream with:
+
+```bash
+docker exec techbank-interview-2-kafka-1 kafka-console-consumer \
+  --bootstrap-server kafka:9092 --topic messaging.message-created.v1 \
+  --from-beginning --property print.key=true --property print.partition=true
+```
+
+The event is the stored document, flattened — ids arrive as hex strings and dates
+as epoch milliseconds. Mongo's `_id` is renamed to `id` by the connector, so
+nothing downstream of the database has to know what the storage engine calls its
+primary key. A sample record is recorded in
+[docs/PLAN.md](docs/PLAN.md); M3 captures a fresh one as a fixture so the consumer
+specs can run without standing Kafka Connect up inside jest.
 
 ## Testing
 
@@ -87,6 +115,7 @@ scale independently.
 |---|---|---|
 | `src/main.ts` | HTTP API | M1 |
 | `src/main.consumer.ts` | Kafka consumer → Elasticsearch indexer | M3 |
+| *(Kafka Connect)* | Debezium MongoDB connector — infrastructure, not our code | M2 |
 
 ### Layers
 
@@ -175,7 +204,10 @@ which resolves through a string token the scanner cannot follow.
 | `pnpm start:consumer` | Kafka consumer (M3) |
 | `pnpm migrate:up` / `migrate:down` | Apply / roll back index migrations |
 | `pnpm migrate:create <name>` | Scaffold a migration |
+| `pnpm debezium:register` | Install or update the CDC connector (idempotent) |
+| `pnpm debezium:status` | Connector and task state |
 | `pnpm test` | Unit and integration tests |
+| `pnpm typecheck` | Typecheck the app and the scripts |
 | `pnpm lint` | ESLint with `--fix` |
 
 ## Documentation

@@ -51,6 +51,10 @@ We add `tenantId` (required for multi-tenancy).
 | D21 | **Accept the hot-partition risk that comes with D12** — no bucket-sharding, no fallback keying | Quantified in [back-of-envelope.md](./back-of-envelope.md): with the bulk consumer of D22, one conversation saturates its partition at roughly **400,000 users typing continuously at once**, and Kafka itself only at ~600,000. Ordinary messaging never approaches this; only live-stream chat does, and that is a different product. Mitigations (bucketed composite key, dedicated topic for hot conversations) are documented in ADR-002b but deliberately not built — they would trade away per-conversation ordering to solve a problem this workload does not have |
 | D23 | **pnpm rather than yarn** | Faster installs. Its stricter resolution also surfaced three type dependencies the hoisted layout was masking. `node-linker=hoisted` is set in `.npmrc` because typegoose and @suites both assume a flat tree |
 | D25 | **TypeScript 6.0.3** — the newest release the toolchain actually supports | 7.x is the Go rewrite and does not expose the JavaScript compiler API ts-jest needs: it fails at `globalSetup`, taking all 71 tests with it. It also sits outside typescript-eslint's peer range (`<6.1.0`). 6.0.3 is inside both peer ranges and passes typecheck, build, lint and the full suite. Adopting it required three config changes TypeScript 6 makes mandatory: `baseUrl` removed in favour of relative `paths`, `types` named explicitly (auto-discovery of `@types/*` is gone), and `rootDir` stated rather than inferred (TS5011). Verified empirically, not assumed |
+| D32 | **`_id` never leaves the database; the boundary speaks `id`** | Mongo requires `_id` and it cannot be renamed away at the storage level, so models and repositories keep it. What was wrong was letting it cross a boundary: the Kafka event contract had `_id` because that is what Debezium emits. Fixed at the source with a `ReplaceField$Value` transform renaming `_id` to `id` before publishing, so the wire shape never mentions the storage engine's spelling and a future move off MongoDB would not change the contract. API DTOs already exposed `id` via the model's virtual |
+| D33 | **Operational scripts are TypeScript, run through ts-node** | Bash was unreadable and, more usefully, could not import from `src`. The register script now injects `KafkaTopic.MessageCreated` and `MESSAGE_CREATED_PARTITIONS` into the connector config at registration time — the two keys are absent from the JSON, so the topic name has one source of truth and the producer cannot drift from the consumer. That removes the duplication a deleted config test had been pointlessly guarding. Scripts sit outside the app's `rootDir`, so they get their own `tsconfig.scripts.json`, listed in `pnpm typecheck` and in eslint's project list |
+| D30 | **Collection names are pinned on the model, not derived from the class name** | Typegoose pluralises the class, so `MessageModel` became `messagemodels` while the migration indexed `messages`. The application ran full collection scans and nothing complained — and `migrations.spec.ts` passed *vacuously*, because it explained a query against the hardcoded `messages`, an empty collection that did have the index. IXSCAN on an empty collection is still IXSCAN. The spec now derives the name from `repository.collectionName`, so an assertion can never again be aimed at a collection the application does not use. Found by M2: Debezium was watching `messaging.messages` and no event ever arrived |
+| D31 | **`migrate-mongo-config.js` loads `.env` and refuses to default the connection string** | The CLI does not load `.env`, so `MONGO_URI` was undefined and the config silently fell back to `mongodb://localhost:27017/messaging` — an unrelated MongoDB that happened to be listening on the developer's machine. `pnpm migrate:up` created a database and an index inside another project's data store, and reported success. Tests never caught it because the harness sets `MONGO_URI` programmatically; only the CLI path was broken. There is now no default at all: a missing `MONGO_URI` throws with an explanation, because guessing which database to migrate is never the safe choice |
 | D29 | **A conversation needs at least two distinct participants** | Two very different requests used to produce identical results: `participantIds: []` (a client that forgot to fill the list) and `participantIds: ['alice']` (a deliberate note-to-self) both answered 201 with a conversation containing only the caller. The API could not tell a bug from an intention. The rule cannot live in the DTO, because the creator is merged in and duplicates collapsed afterwards — the use case is the first point where membership is final, which is also what turns a previously dead guard into a reachable one: its old test passed `creatorId: ''`, a state `JwtStrategy` makes impossible. So the DTO now rejects an empty array (`@ArrayMinSize(1)`, a 400 naming the field) and the use case rejects a final membership below `MIN_CONVERSATION_PARTICIPANTS`. Note-to-self is a real feature in other products; supporting it is a one-line change to that constant, and doing it deliberately beats arriving at it by accident |
 | D28 | **`TenantScopedRepository` overrides every filter-taking method; two named doors lead out** | Only reads were confined originally, via a `protected scoped()` helper each repository method had to remember to call — and `createOne`, `updateMany`, `deleteMany` were inherited raw. `createOne({tenantId:'tenant-b'})` or `deleteMany({name:'x'})` inside a tenant-a request reached straight into another tenant. All nine primitives (`findOne`, `find`, `exists`, `count`, `updateOne`, `updateMany`, `findOneAndUpdate`, `deleteOne`, `deleteMany`) are now overridden to scope; `findById`/`updateById`/`deleteById` inherit the confinement through polymorphism. Writes stamp `tenantId` rather than accept one, and the signature narrows to `Omit<Partial<T>,'tenantId'>` so supplying one is a compile error — that is what makes an override honest instead of surprising, and why a separate `createOneInTenant` was rejected: a new name leaves the unsafe method public and turns isolation back into a convention. **Guard order matters**: the empty-filter check runs on the *caller's* filter before scoping, because `{name: undefined}` scoped becomes `{tenantId}` — a perfectly usable filter that would let the mistake through. Escape hatches are `forTenant(id)` for jobs with no CLS context and `acrossTenants()` for deliberately global work (a future platform-admin role); both are greppable, so every place isolation is set aside can be audited, and the authority check belongs in the use case since the repository knows nothing about roles. Inserts are never relaxed — a document must belong to a tenant. Uncovered: a subclass touching `this.model` directly bypasses all of it; review has to catch that |
 | D27 | **Input shape is validated by the DTO; use cases validate only what needs loaded state** | Content being non-blank and within the length bound is a property of the request, so `CreateMessageDtos.RequestDto` owns it: the failure becomes a 400 naming the offending field, the bound shows up in Swagger, and there is one place to change it. Duplicating the same two checks inside the use case bought nothing — every caller arrives through the controller. `@Trim()` runs before `@MinLength(1)`, which closes the gap where `"   "` satisfied a three-character minimum. What stays in the use case is what a DTO cannot see: whether the conversation exists in this tenant (404) and whether the sender is a participant (403). The trade-off accepted here: the use case now trusts its input, so a future non-HTTP caller would need its own validation |
@@ -170,7 +174,6 @@ src/
     logging/                       app.logger.ts  (renamed from RailwayCompatibleLogger)
     cls/                           + tenantId
     caching/                       redis, unchanged
-    kafka/                         ClientKafka producer config + topic constants
     elasticsearch/                 client · index template · alias resolver
 
   routers/
@@ -189,7 +192,6 @@ src/
   test/
     test-helper/                   three modes, ported to Mongo
     factories/                     hand-written BaseFactory
-    fixtures/debezium/             fixtures shaped like Debezium output
 ```
 
 ---
@@ -258,14 +260,61 @@ without Kafka or ES**
 - docker-compose: kafka (KRaft) + kafka-connect (Debezium)
 - `infra/debezium/message-connector.json` with the SMT chain, plus `yarn debezium:register`
 - Verify the topic receives the right shape, the right key, and the right name
-- Capture a real fixture from compose into `test/fixtures/debezium/`
+- Capture a real event from compose (recorded in §M2 below)
 
 **Done when:** inserting into Mongo produces an event on `messaging.message-created.v1`
 keyed by `conversationId`
 
+**Verified on a running stack**, not assumed:
+
+| Check | Result |
+|---|---|
+| Topic name after `RegexRouter` | `messaging.message-created.v1` |
+| Partitions | 6 |
+| Record key | the conversation id as a plain hex string |
+| Ordering | three messages of one conversation all landed on partition 2 |
+| `id` / `conversationId` encoding | hex strings, **not** extended JSON `{"$oid": …}`; `_id` is renamed to `id` by the connector (D32) |
+| Date encoding | epoch milliseconds, **not** ISO strings |
+| `metadata` | nested object preserved |
+| Added by the unwrap SMT | `__deleted: false` |
+
+A record as it actually appeared on the topic:
+
+```
+Partition:3  key="6a7f352caefeeac0e37bd99c"
+{
+  "id":             "6a7f352caefeeac0e37bd99f",
+  "tenantId":       "tenant-a",
+  "conversationId": "6a7f352caefeeac0e37bd99c",
+  "senderId":       "alice",
+  "content":        "id-rename-1",
+  "timestamp":      1786721580916,
+  "metadata":       { "probe": 1 },
+  "createdAt":      1786721580917,
+  "updatedAt":      1786721580917,
+  "__deleted":      false
+}
+```
+
+Recorded here rather than committed as a test fixture: nothing reads a fixture
+until M3 has a consumer, and committed test data that no test reads drifts from
+reality silently — change the SMT chain and the file becomes a lie with nothing
+to catch it. M3 captures a fresh one when there is something to assert against.
+
+The last three were open questions in the risk table; the ObjectId concern turned
+out to be unfounded, and the epoch-millis encoding is something M3's consumer has
+to convert. The topic name is duplicated between `KafkaTopic` and the connector JSON, and
+nothing automated catches them drifting apart — asserting one string equals
+another is not a test, it is the same configuration written twice. What catches
+it is the end-to-end check above: post a message, watch the topic. Removing the
+duplication properly would mean generating the connector config from the enum at
+registration time, which is worth doing if the topology grows past one topic.
+
 ### M3 — Consumer + Elasticsearch
 
 - ES client, `messages-*` index template, per-tenant filtered alias provisioning
+- Capture a fresh Debezium event as a fixture, and the TypeScript contract to go
+  with it — deliberately not written in M2, where nothing consumed either
 - `main.consumer.ts` with `@EventPattern` → idempotent upsert (`_id = messageId`)
 - **Bulk indexing** via the ES `_bulk` API, and `lastMessageAt` coalesced to one
   conditional update per conversation per batch (D22) — this is the change that makes

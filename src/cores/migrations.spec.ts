@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 
+import { MESSAGES_COLLECTION } from '@/cores/models/message.model';
 import { MessageRepository } from '@/cores/repositories/message.repository';
 import { ConnectionSingleton } from '@/infra/database/connection.singleton';
 import { TestHelper } from '@/test/test-helper';
@@ -10,6 +11,12 @@ import { MessageFactory } from '@/test/factories/message.factory';
  * it. These tests are what stop that arrangement from failing silently: without
  * them a forgotten migration would leave the listing query doing a collection
  * scan, and nothing else would notice until production slowed down.
+ *
+ * Every assertion goes through `repository.collectionName` rather than a literal.
+ * An earlier version hardcoded 'messages' while typegoose was actually writing to
+ * 'messagemodels', so the explain ran against a different — empty, but correctly
+ * indexed — collection and passed while production did full scans. Deriving the
+ * name from the repository is what makes that impossible to repeat.
  */
 describe('@cores/migrations — messaging indexes', () => {
   const testHelper = TestHelper.lightweightMode(MessageRepository);
@@ -26,9 +33,19 @@ describe('@cores/migrations — messaging indexes', () => {
   beforeEach(() => testHelper.setTenant('tenant-a'));
 
   describe('when the migrations have run', () => {
+    it('should not let typegoose fall back to its derived collection name', () => {
+      // Guards the pinning itself: drop @modelOptions from MessageModel and the
+      // collection silently becomes the pluralised class name, which is the bug
+      // that made an earlier version of this whole file pass vacuously.
+      // Drift between the constant and the migration is caught by the index
+      // assertions below, which look in the collection the repository uses.
+      expect(repository.collectionName).toBe(MESSAGES_COLLECTION);
+      expect(repository.collectionName).not.toBe('messagemodels');
+    });
+
     it('should have created the compound index the listing is built around', async () => {
       const indexes = await ConnectionSingleton.get()
-        .collection('messages')
+        .collection(repository.collectionName)
         .indexes();
 
       const listing = indexes.find(
@@ -50,8 +67,15 @@ describe('@cores/migrations — messaging indexes', () => {
       const conversationId = new Types.ObjectId();
       await new MessageFactory().createMany(5, { conversationId });
 
+      // Assert the documents really landed where we are about to explain.
+      expect(
+        await ConnectionSingleton.get()
+          .collection(repository.collectionName)
+          .countDocuments({ conversationId }),
+      ).toBe(5);
+
       const explained = await ConnectionSingleton.get()
-        .collection('messages')
+        .collection(repository.collectionName)
         .find({ tenantId: 'tenant-a', conversationId })
         .sort({ timestamp: -1, _id: -1 })
         .limit(3)
@@ -69,8 +93,15 @@ describe('@cores/migrations — messaging indexes', () => {
       const conversationId = new Types.ObjectId();
       await new MessageFactory().createMany(5, { conversationId });
 
+      // Assert the documents really landed where we are about to explain.
+      expect(
+        await ConnectionSingleton.get()
+          .collection(repository.collectionName)
+          .countDocuments({ conversationId }),
+      ).toBe(5);
+
       const explained = await ConnectionSingleton.get()
-        .collection('messages')
+        .collection(repository.collectionName)
         .find({ tenantId: 'tenant-a', conversationId })
         .sort({ timestamp: -1, _id: -1 })
         .limit(3)

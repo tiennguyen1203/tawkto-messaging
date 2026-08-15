@@ -6,6 +6,12 @@ dist
 coverage
 *.tsbuildinfo
 
+# Emitted artefacts must only ever live in dist/. A misconfigured project once
+# dropped .d.ts files next to the scripts they were generated from.
+/scripts/**/*.js
+/scripts/**/*.d.ts
+/scripts/**/*.map
+
 # Environment
 .env
 .env.local

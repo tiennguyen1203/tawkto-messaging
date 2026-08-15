@@ -13,13 +13,16 @@
     "start:debug": "pnpm build && (tsc -p tsconfig.build.json --watch --preserveWatchOutput & TSC=$!; trap 'kill $TSC 2>/dev/null' EXIT INT TERM; node --watch --inspect dist/main)",
     "start:prod": "node dist/main",
     "start:consumer": "pnpm build && node dist/main.consumer",
-    "lint": "eslint \"src/**/*.ts\" --fix",
+    "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.ts\" --fix",
     "test": "APP_ENV=test jest --config jest.json --forceExit",
     "test:watch": "APP_ENV=test jest --config jest.json --watch",
     "test:cov": "APP_ENV=test jest --config jest.json --coverage",
     "migrate:up": "migrate-mongo up",
     "migrate:down": "migrate-mongo down",
-    "migrate:create": "migrate-mongo create"
+    "migrate:create": "migrate-mongo create",
+    "debezium:register": "TS_NODE_PROJECT=tsconfig.scripts.json ts-node -r tsconfig-paths/register scripts/register-debezium.ts",
+    "debezium:status": "curl -s ${KAFKA_CONNECT_URL:-http://localhost:8083}/connectors/messaging-message-connector/status",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json"
   },
   "engines": {
     "node": ">=20.0.0"

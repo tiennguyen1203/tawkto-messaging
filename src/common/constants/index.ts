@@ -12,5 +12,6 @@ export const env = {
   ROOT_DIR: '',
 };
 
+export * from './kafka.constant';
 export * from './message.constant';
 export * from './timezone.constant';

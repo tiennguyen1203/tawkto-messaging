@@ -1,4 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+  "// note": "`exclude` replaces the base list rather than extending it, so scripts/ has to be repeated here — it lives outside rootDir and would fail TS6059.",
+  "exclude": ["node_modules", "dist", "scripts", "**/*spec.ts"]
 }

@@ -96,6 +96,15 @@ export class BaseRepository<T extends BaseModel> {
     return this.model.modelName;
   }
 
+  /**
+   * The collection this repository reads and writes. Exposed so tests can assert
+   * against the collection the application really uses instead of a hardcoded
+   * name that may not match.
+   */
+  get collectionName(): string {
+    return this.model.collection.name;
+  }
+
   // ── reads ────────────────────────────────────────────────────────────────
 
   async findOne(

@@ -19,7 +19,10 @@ export default tseslint.config(
       },
       sourceType: 'commonjs',
       parserOptions: {
-        projectService: true,
+        // Both projects, listed explicitly: the app's tsconfig excludes scripts/
+        // (they sit outside its rootDir), so projectService alone cannot type
+        // them and typed rules silently fail to parse them.
+        project: ['./tsconfig.json', './tsconfig.scripts.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -54,14 +57,16 @@ export default tseslint.config(
               message:
                 'Import from @/common/constants instead of individual files',
             },
-            {
-              group: ['@/common/email/*', '!@/common/email'],
-              message:
-                'Import from @/common/email instead of individual files',
-            },
           ],
         },
       ],
+    },
+  },
+  {
+    // Operational scripts are command-line tools: printing is their output.
+    files: ['scripts/**/*.ts'],
+    rules: {
+      'no-console': 'off',
     },
   },
 );

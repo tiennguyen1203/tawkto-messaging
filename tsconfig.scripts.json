@@ -1,0 +1,13 @@
+{
+  "// note": "Operational scripts live outside src/, which the app's rootDir pins. Only scripts are listed; the src files they import come in transitively, which keeps jest-only spec files out of this program. The base project excludes scripts/, so exclude is overridden here.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

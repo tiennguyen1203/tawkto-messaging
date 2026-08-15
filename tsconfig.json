@@ -27,5 +27,8 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  // Operational scripts live outside rootDir and have their own project,
+  // tsconfig.scripts.json, which `pnpm typecheck` also runs.
+  "exclude": ["node_modules", "dist", "scripts"]
 }
