@@ -89,6 +89,14 @@ proven, but that nothing in the running system calls yet.
 thing that calls it is its own spec. The consumer arrives in M3.2, the search
 endpoint in M3.3.
 
+**Search aliases are created on the write path.** `ensureAlias` creates a tenant's
+filtered alias the first time that tenant's messages are indexed, cached in a
+per-process `Set`. It belongs in tenant provisioning instead — there is no tenant
+lifecycle in this codebase yet, so every tenant-shaped resource is created lazily.
+Moving it collapses `ensureAlias` into a pure string and removes the cache
+entirely. The failure mode that makes this worth moving, and the cheaper fix that
+neutralises it either way, are in [PLAN.md §10](./PLAN.md#10-deferred--tenant-provisioning).
+
 **Redis caches nothing.** It is configured, health-checked and proven reachable,
 but no use case caches anything through it. Caching is optional in the brief.
 

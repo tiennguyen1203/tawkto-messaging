@@ -463,7 +463,50 @@ test · test:cov · lint · build
 
 ---
 
-## 10. Risks — verify during implementation
+## 10. Deferred — tenant provisioning
+
+There is no tenant lifecycle in this codebase: a `tenantId` arrives in a JWT and every
+tenant-shaped resource is created lazily, the first time something needs it. That is a
+gap, not a design, and it is where a later phase covering tenant provisioning and user
+creation belongs.
+
+**The search alias is the piece that most wants moving.** `MessageSearchIndex.ensureAlias`
+creates a tenant's filtered alias the first time that tenant's messages are indexed, and
+remembers it in a per-process `Set`. Creating an alias is a tenant-lifecycle event; the
+indexing hot path should not be the thing deciding it. Once it moves to provisioning,
+`ensureAlias` collapses into `messageAliasFor()` — a pure string, no round trip, and no
+cache at all, in memory or otherwise.
+
+Two properties of the present arrangement argue for moving it rather than living with it.
+
+The cache is unbounded: a long-lived consumer holds one string for every tenant it has
+ever seen.
+
+And a cache that is *wrong* — an alias deleted behind its back by a reindex, a restore or
+a hand-run command — does not fail. `action.auto_create_index` defaults to on, so the
+write creates a **concrete index** under the alias's name, mapped dynamically, silently
+discarding the `dynamic: strict` guarantee the mapping exists to provide. The alias can
+then never be created, because an index already holds the name:
+
+```
+invalid_alias_name_exception
+Invalid alias name [messages-tenant-x]: an index or data stream exists with the same
+name as the alias
+```
+
+Recovery is manual: reindex that tenant's documents into `messages-v1` and delete the
+phantom index. Verified against Elasticsearch 8.15.3, not assumed.
+
+Worth noting that a shared cache would not have been the safer answer here, and neither is
+the in-memory one — both can hold the same wrong entry, and the damage lands on the first
+write after they do. What actually removes the failure mode is refusing the auto-create:
+restricting `action.auto_create_index` so `messages-*` cannot be conjured by a write turns
+a silent, permanent corruption into a loud error. That is worth doing whether or not alias
+creation moves to provisioning, and it is cheaper than either.
+
+---
+
+## 11. Risks — verify during implementation
 
 | Risk | Mitigation |
 |---|---|
@@ -475,7 +518,7 @@ test · test:cov · lint · build
 
 ---
 
-## 11. Note
+## 12. Note
 
 The template originates from the Aentry code base. Evidence indicates the author is the
 owner of this repository (`@tiennguyen17t2/schematics`, the admin email), so it is treated
