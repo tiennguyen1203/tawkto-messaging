@@ -62,6 +62,11 @@ Change streams — the source Debezium tails — are unavailable on a standalone
 MongoDB. Running one node as `rs0` is the smallest configuration that supports
 them.
 
+## Architecture
+
+A component map — what is built, what is scaffolded, what is still a plan — is in
+[docs/architecture.md](docs/architecture.md).
+
 ### Change data capture instead of dual writes
 
 `POST /api/v1/messages` performs exactly one write, to MongoDB. Nothing publishes
@@ -89,21 +94,6 @@ nothing downstream of the database has to know what the storage engine calls its
 primary key. A sample record is recorded in
 [docs/PLAN.md](docs/PLAN.md); M3 captures a fresh one as a fixture so the consumer
 specs can run without standing Kafka Connect up inside jest.
-
-## Testing
-
-```bash
-pnpm test          # unit + integration, against a real MongoDB in testcontainers
-pnpm test:cov
-pnpm lint
-pnpm exec tsc --noEmit -p tsconfig.json
-```
-
-Integration tests start one MongoDB container for the whole run and give each test
-file its own database inside it, so files stay isolated and can run in parallel.
-No local MongoDB is required — Docker is.
-
-## Architecture
 
 ### Processes
 
@@ -176,6 +166,19 @@ so they exercise the real indexes.
 Migrations are plain CommonJS so the same files load unchanged from the CLI and
 from inside jest, with no build step in between.
 
+## Testing
+
+```bash
+pnpm test          # unit + integration, against a real MongoDB in testcontainers
+pnpm test:cov
+pnpm lint
+pnpm exec tsc --noEmit -p tsconfig.json
+```
+
+Integration tests start one MongoDB container for the whole run and give each test
+file its own database inside it, so files stay isolated and can run in parallel.
+No local MongoDB is required — Docker is.
+
 ## Testing utilities
 
 Three modes, chosen automatically by [TestHelper](src/test/test-helper.ts):
@@ -212,6 +215,8 @@ which resolves through a string token the scanner cannot follow.
 
 ## Documentation
 
+- [docs/architecture.md](docs/architecture.md) — component map, what is built and
+  what is not, known gaps
 - [docs/PLAN.md](docs/PLAN.md) — decisions, architecture, milestones
 - [docs/back-of-envelope.md](docs/back-of-envelope.md) — capacity estimate behind
   the Kafka partitioning trade-off
