@@ -14,6 +14,10 @@
     // it from the common source directory.
     "rootDir": "./src",
     "incremental": true,
+    // This config only ever runs with --noEmit, so its cache describes nothing on
+    // disk and is safe anywhere. tsconfig.build.json overrides it with a path
+    // inside dist — see the note there for why that one matters.
+    "tsBuildInfoFile": "./node_modules/.cache/tsc/typecheck.tsbuildinfo",
     "strict": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": false,

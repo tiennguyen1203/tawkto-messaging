@@ -89,6 +89,19 @@ export class MessageSearchIndex {
       return;
     }
 
+    // A document without these two is not a data condition to tolerate, it is a
+    // broken invariant. An absent `messageId` makes Elasticsearch generate an id,
+    // which quietly turns every redelivery into a new document — the idempotence
+    // the whole at-least-once pipeline rests on, gone with nothing to notice it.
+    // An absent `tenantId` routes the write to `messages-undefined`. Callers keep
+    // unusable records away from here; this is the backstop that says so out loud.
+    const broken = documents.find((d) => !d.messageId || !d.tenantId);
+    if (broken) {
+      throw new Error(
+        `Refusing to index a document without a messageId and tenantId: ${JSON.stringify(broken)}`,
+      );
+    }
+
     const tenants = [...new Set(documents.map((d) => d.tenantId))];
     const aliases = new Map<string, string>();
     for (const tenantId of tenants) {

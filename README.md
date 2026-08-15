@@ -2,12 +2,12 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M3.1 — the search index and the way into it are built; nothing feeds it
-yet.** Conversations and messages can be created and listed with cursor pagination,
-scoped to a tenant by the repository rather than by its callers; every insert reaches
-Kafka through Debezium without the application dual-writing. Elasticsearch has its
-mapping and bulk writes land behind a filtered alias per tenant — but the consumer
-that would feed it (M3.2) and the search endpoint (M3.3) are not built. See
+**Status: M3.2 — messages reach Elasticsearch end to end.** Conversations and
+messages can be created and listed with cursor pagination, scoped to a tenant by the
+repository rather than by its callers. Every insert reaches Kafka through Debezium
+without the application dual-writing, and the consumer indexes whole batches behind a
+filtered alias per tenant — a message posted through the API is in Elasticsearch about
+three seconds later. What remains is the search endpoint (M3.3) that queries it. See
 [docs/PLAN.md](docs/PLAN.md) for the milestones,
 [docs/architecture.md](docs/architecture.md) for what is wired to what, and
 [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
@@ -48,12 +48,18 @@ docker compose ps            # wait for all five to be healthy
 pnpm migrate:up              # creates the MongoDB indexes
 pnpm es:apply-templates      # creates the Elasticsearch index and its mapping
 pnpm debezium:register       # installs the CDC connector
-pnpm start:dev
+
+pnpm start:dev               # the API
+pnpm start:consumer          # the indexer, in a second terminal
 ```
 
 The two provisioning steps are separate commands rather than boot-time work for the
 same reason: replicas would race each other, and a mapping or an index that fails to
 apply should stop a deploy rather than a request. Both are idempotent.
+
+`KAFKA_BROKERS` points at **9094**, the listener compose publishes to the host. `9092`
+is the internal one, reachable only from another container — a consumer started with
+pnpm cannot use it.
 
 Then:
 
@@ -219,7 +225,7 @@ which resolves through a string token the scanner cannot follow.
 |---|---|
 | `pnpm build` | Compile with `tsc` (not the Nest CLI — see D26 in the plan) |
 | `pnpm start:dev` | HTTP API with watch mode |
-| `pnpm start:consumer` | Kafka consumer (M3.2) |
+| `pnpm start:consumer` | Kafka → Elasticsearch indexer |
 | `pnpm migrate:up` / `migrate:down` | Apply / roll back MongoDB index migrations |
 | `pnpm es:apply-templates` | Apply the Elasticsearch mapping and create the index (idempotent) |
 | `pnpm migrate:create <name>` | Scaffold a migration |

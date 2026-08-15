@@ -53,6 +53,8 @@ We add `tenantId` (required for multi-tenancy).
 | D25 | **TypeScript 6.0.3** — the newest release the toolchain actually supports | 7.x is the Go rewrite and does not expose the JavaScript compiler API ts-jest needs: it fails at `globalSetup`, taking all 71 tests with it. It also sits outside typescript-eslint's peer range (`<6.1.0`). 6.0.3 is inside both peer ranges and passes typecheck, build, lint and the full suite. Adopting it required three config changes TypeScript 6 makes mandatory: `baseUrl` removed in favour of relative `paths`, `types` named explicitly (auto-discovery of `@types/*` is gone), and `rootDir` stated rather than inferred (TS5011). Verified empirically, not assumed |
 | D32 | ~~Rename `_id` to `id` before publishing~~ — **reverted** | The connector briefly carried a `ReplaceField$Value` transform so the wire shape never spelled the primary key Mongo's way. Reverted: the topic has exactly one consumer, our own indexer, inside the bounded context that D13 already accepted coupling within. Renaming one field while `__deleted`, epoch-millisecond dates and the rest of the document stay in Mongo's shape is a half-measure that buys nothing and adds an SMT to get wrong. `_id` never reaching an *API* boundary still holds — that is enforced by the DTOs, which is where it belongs. If a consumer outside this context ever subscribes, the answer is a second curated topic, not a cosmetic rename on this one |
 | D33 | **Operational scripts are TypeScript, run through ts-node** | Bash was unreadable and, more usefully, could not import from `src`. The register script now injects `KafkaTopic.MessageCreated` and `MESSAGE_CREATED_PARTITIONS` into the connector config at registration time — the two keys are absent from the JSON, so the topic name has one source of truth and the producer cannot drift from the consumer. That removes the duplication a deleted config test had been pointlessly guarding. Scripts sit outside the app's `rootDir`, so they get their own `tsconfig.scripts.json`, listed in `pnpm typecheck` and in eslint's project list |
+| D34 | **Incremental build state lives inside `dist`**, not at the project root | `prebuild` wipes `dist`; a `.tsbuildinfo` outside it survives, and tsc then skips emitting files whose outputs it believes are still there. The result is a `dist` missing most of the application, produced by a command that exits 0 — the failure only appears as `MODULE_NOT_FOUND` at start. Pairing the cache with the directory it describes makes the two impossible to disagree. `tsconfig.json` runs only with `--noEmit`, so its cache describes nothing and sits in `node_modules/.cache` |
+| D35 | **A record missing `_id`, `tenantId` or `conversationId` is dropped by the consumer and refused by the index** | Two layers because they answer different questions. The consumer *drops* — a record shaped by an older transform chain must not fail its batch forever and wedge every message behind it on that partition — and logs what it skipped. The index *throws*, because indexing without a document id is a broken invariant, not a data condition: Elasticsearch generates one, the write succeeds, and the redelivery that was supposed to overwrite writes a second copy instead. The at-least-once pipeline stops being idempotent with nothing reporting it. Found in M3.2 by replaying real topic records, not by a test — every fixture had been well-formed |
 | D30 | **Collection names are pinned on the model, not derived from the class name** | Typegoose pluralises the class, so `MessageModel` became `messagemodels` while the migration indexed `messages`. The application ran full collection scans and nothing complained — and `migrations.spec.ts` passed *vacuously*, because it explained a query against the hardcoded `messages`, an empty collection that did have the index. IXSCAN on an empty collection is still IXSCAN. The spec now derives the name from `repository.collectionName`, so an assertion can never again be aimed at a collection the application does not use. Found by M2: Debezium was watching `messaging.messages` and no event ever arrived |
 | D31 | **`migrate-mongo-config.js` loads `.env` and refuses to default the connection string** | The CLI does not load `.env`, so `MONGO_URI` was undefined and the config silently fell back to `mongodb://localhost:27017/messaging` — an unrelated MongoDB that happened to be listening on the developer's machine. `pnpm migrate:up` created a database and an index inside another project's data store, and reported success. Tests never caught it because the harness sets `MONGO_URI` programmatically; only the CLI path was broken. There is now no default at all: a missing `MONGO_URI` throws with an explanation, because guessing which database to migrate is never the safe choice |
 | D29 | **A conversation needs at least two distinct participants** | Two very different requests used to produce identical results: `participantIds: []` (a client that forgot to fill the list) and `participantIds: ['alice']` (a deliberate note-to-self) both answered 201 with a conversation containing only the caller. The API could not tell a bug from an intention. The rule cannot live in the DTO, because the creator is merged in and duplicates collapsed afterwards — the use case is the first point where membership is final, which is also what turns a previously dead guard into a reachable one: its old test passed `creatorId: ''`, a state `JwtStrategy` makes impossible. So the DTO now rejects an empty array (`@ArrayMinSize(1)`, a 400 naming the field) and the use case rejects a final membership below `MIN_CONVERSATION_PARTICIPANTS`. Note-to-self is a real feature in other products; supporting it is a one-line change to that constant, and doing it deliberately beats arriving at it by accident |
@@ -384,6 +386,44 @@ their alias, and indexing the same message twice leaves one document
 **Done when:** posting a message through the API makes it appear in Elasticsearch
 via compose, with no manual step in between
 
+**Verified on a running stack**, not assumed:
+
+| Check | Result |
+|---|---|
+| `POST /api/v1/messages` → searchable in Elasticsearch | ~3s, no manual step |
+| Document id | the message id, so redelivery overwrites |
+| Tenant isolation end to end | two tenants posted identical text; each alias returned only its own |
+| Unmapped fields | none; `dynamic: strict` still reports the seven mapped fields |
+| Replay | consumer group offsets reset to earliest **twice**; 9 records reprocessed each time, document count stayed 6 |
+
+The replay check is the one worth reading twice, because the first attempt at it
+proved nothing: restarting the consumer resumes from committed offsets, so
+`fromBeginning: true` never applies and no record is re-read. Resetting the group's
+offsets is what actually replays.
+
+Three defects surfaced, all of them latent before M3.2 gave them something to break:
+
+**The incremental build emitted a partial `dist`.** `incremental: true` wrote
+`tsconfig.build.tsbuildinfo` at the project root while `prebuild` removed only
+`dist/`, so tsc believed outputs it had already emitted were still on disk and
+skipped them. Every `pnpm build` after the first produced a `dist` missing most of
+the application, exited 0, and failed at start with `MODULE_NOT_FOUND`. The build
+info now lives at `dist/.tsbuildinfo`, where `rm -rf dist` takes it too —
+incremental state belongs with the outputs it describes (D34).
+
+**`KAFKA_BROKERS` pointed at the wrong listener.** Compose publishes `9094` to the
+host; `9092` is the internal listener only other containers can reach. A consumer
+started with `pnpm start:consumer` could never connect. Nothing had run the
+consumer against compose before, so nothing had noticed.
+
+**Malformed records silently broke idempotence.** Records published before D32 was
+reverted carry `id` rather than `_id`. They parse cleanly, map to a document with
+`messageId: undefined`, and Elasticsearch then generates an id — so each replay
+wrote *another* copy. `dynamic: strict` does not catch it, because the field is
+absent rather than unknown, and an absent `tenantId` would likewise route to
+`messages-undefined`. Every unit test had passed, because every fixture was
+well-formed; real data on the topic is what exposed it (D35).
+
 #### M3.3 — The search endpoint
 
 - `MessageSearchIndex.search`: `search_after` over a sort with a tiebreaker, so
@@ -442,7 +482,7 @@ MONGO_HOST_PORT=27018
 REDIS_HOST_PORT=6380
 MONGO_URI=mongodb://localhost:27018/messaging?replicaSet=rs0&directConnection=true
 REDIS_HOST / REDIS_PORT / REDIS_USERNAME / REDIS_PASSWORD
-KAFKA_BROKERS=localhost:9092
+KAFKA_BROKERS=localhost:9094
 KAFKA_CONSUMER_GROUP=message-search-indexer
 KAFKA_CONNECT_URL=http://localhost:8083
 ELASTICSEARCH_NODE=http://localhost:9200

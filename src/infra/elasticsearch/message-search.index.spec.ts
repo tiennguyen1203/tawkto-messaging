@@ -5,21 +5,23 @@ import {
   MessageSearchIndex,
 } from './message-search.index';
 
-const doc = (
-  overrides: Partial<MessageSearchDocument> = {},
-): MessageSearchDocument => ({
-  messageId: 'm1',
-  tenantId: 'tenant-a',
-  conversationId: 'c1',
-  senderId: 'alice',
-  content: 'the quick brown fox jumps',
-  timestamp: 1786763181092,
-  ...overrides,
-});
-
 describe('@infra/elasticsearch/message-search.index', () => {
-  const helper = new SearchHelper();
+  const helper = new SearchHelper('index-spec');
+  const TENANT_A = helper.tenant('a');
+  const TENANT_B = helper.tenant('b');
   let index: MessageSearchIndex;
+
+  const doc = (
+    overrides: Partial<MessageSearchDocument> = {},
+  ): MessageSearchDocument => ({
+    messageId: 'm1',
+    tenantId: TENANT_A,
+    conversationId: 'c1',
+    senderId: 'alice',
+    content: 'the quick brown fox jumps',
+    timestamp: 1786763181092,
+    ...overrides,
+  });
 
   beforeAll(async () => {
     await helper.setUp();
@@ -35,19 +37,23 @@ describe('@infra/elasticsearch/message-search.index', () => {
     await helper.refresh();
   };
 
+  const idsUnder = async (alias: string, query: object = { match_all: {} }) => {
+    const found = await helper.client.search<MessageSearchDocument>({
+      index: alias,
+      query,
+    });
+    return found.hits.hits.map((hit) => hit._source!.messageId).sort();
+  };
+
   describe('when a document is indexed for a tenant', () => {
     it('should be findable through that tenant alias', async () => {
       await indexAndRefresh([doc()]);
 
-      const found = await helper.client.search({
-        index: messageAliasFor('tenant-a'),
-        query: { match: { content: 'brown fox' } },
-      });
-
-      expect(found.hits.hits).toHaveLength(1);
       expect(
-        (found.hits.hits[0]._source as MessageSearchDocument).messageId,
-      ).toBe('m1');
+        await idsUnder(messageAliasFor(TENANT_A), {
+          match: { content: 'brown fox' },
+        }),
+      ).toEqual(['m1']);
     });
 
     it('should create the tenant alias over the shared index', async () => {
@@ -58,7 +64,7 @@ describe('@infra/elasticsearch/message-search.index', () => {
       });
 
       expect(Object.keys(aliases[MESSAGES_INDEX].aliases)).toContain(
-        messageAliasFor('tenant-a'),
+        messageAliasFor(TENANT_A),
       );
     });
   });
@@ -71,55 +77,35 @@ describe('@infra/elasticsearch/message-search.index', () => {
       await indexAndRefresh([doc({ content: 'first delivery' })]);
       await indexAndRefresh([doc({ content: 'second delivery' })]);
 
-      const found = await helper.client.search({
-        index: messageAliasFor('tenant-a'),
+      const found = await helper.client.search<MessageSearchDocument>({
+        index: messageAliasFor(TENANT_A),
         query: { match_all: {} },
       });
 
       expect(found.hits.hits).toHaveLength(1);
-      expect(
-        (found.hits.hits[0]._source as MessageSearchDocument).content,
-      ).toBe('second delivery');
+      expect(found.hits.hits[0]._source!.content).toBe('second delivery');
     });
   });
 
   describe('when two tenants hold messages with identical content', () => {
     it('should show each tenant only its own', async () => {
       await indexAndRefresh([
-        doc({ messageId: 'm-a', tenantId: 'tenant-a' }),
-        doc({ messageId: 'm-b', tenantId: 'tenant-b' }),
+        doc({ messageId: 'm-a', tenantId: TENANT_A }),
+        doc({ messageId: 'm-b', tenantId: TENANT_B }),
       ]);
 
-      const forA = await helper.client.search({
-        index: messageAliasFor('tenant-a'),
-        query: { match: { content: 'brown fox' } },
-      });
-      const forB = await helper.client.search({
-        index: messageAliasFor('tenant-b'),
-        query: { match: { content: 'brown fox' } },
-      });
-
-      expect(
-        forA.hits.hits.map(
-          (h) => (h._source as MessageSearchDocument).messageId,
-        ),
-      ).toEqual(['m-a']);
-      expect(
-        forB.hits.hits.map(
-          (h) => (h._source as MessageSearchDocument).messageId,
-        ),
-      ).toEqual(['m-b']);
+      const query = { match: { content: 'brown fox' } };
+      expect(await idsUnder(messageAliasFor(TENANT_A), query)).toEqual(['m-a']);
+      expect(await idsUnder(messageAliasFor(TENANT_B), query)).toEqual(['m-b']);
     });
 
     it('should still hold both in the one shared index', async () => {
       await indexAndRefresh([
-        doc({ messageId: 'm-a', tenantId: 'tenant-a' }),
-        doc({ messageId: 'm-b', tenantId: 'tenant-b' }),
+        doc({ messageId: 'm-a', tenantId: TENANT_A }),
+        doc({ messageId: 'm-b', tenantId: TENANT_B }),
       ]);
 
-      const all = await helper.client.count({ index: MESSAGES_INDEX });
-
-      expect(all.count).toBe(2);
+      expect(await helper.count()).toBe(2);
     });
   });
 
@@ -133,6 +119,23 @@ describe('@infra/elasticsearch/message-search.index', () => {
           { ...doc(), __deleted: false } as MessageSearchDocument,
         ]),
       ).rejects.toThrow(/strict_dynamic_mapping_exception/);
+    });
+  });
+
+  describe('when a document has no id of its own', () => {
+    it('should refuse the batch rather than let Elasticsearch invent one', async () => {
+      // An invented id is not a visible failure, it is a silent one: the write
+      // succeeds, and the next redelivery of the same message writes a second
+      // document instead of overwriting the first.
+      await expect(
+        index.indexMany([doc({ messageId: undefined as unknown as string })]),
+      ).rejects.toThrow(/without a messageId and tenantId/);
+    });
+
+    it('should refuse a document with no tenant, which would route to messages-undefined', async () => {
+      await expect(
+        index.indexMany([doc({ tenantId: undefined as unknown as string })]),
+      ).rejects.toThrow(/without a messageId and tenantId/);
     });
   });
 

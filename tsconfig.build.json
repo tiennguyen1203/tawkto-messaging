@@ -1,5 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "// note": "`exclude` replaces the base list rather than extending it, so scripts/ has to be repeated here — it lives outside rootDir and would fail TS6059.",
+  "compilerOptions": {
+    // Lives inside dist so `rm -rf dist` takes it too. Left at the project root
+    // it survives the prebuild wipe, and tsc then believes outputs it had
+    // already emitted are still on disk: the second `pnpm build` in a row emits
+    // only what changed and leaves a dist missing most of the application. That
+    // failure is silent — tsc exits 0 — and surfaces only as MODULE_NOT_FOUND
+    // when the process starts. Incremental state belongs with the outputs it
+    // describes.
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
   "exclude": ["node_modules", "dist", "scripts", "**/*spec.ts"]
 }

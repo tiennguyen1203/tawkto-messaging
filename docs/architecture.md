@@ -26,8 +26,8 @@ flowchart TD
     redis[("Redis<br/>health-checked, caches nothing yet")]
     dbz["Debezium on Kafka Connect<br/>unwrap envelope · re-key by conversation"]
     kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-created.v1<br/>6 partitions · key = conversationId"]]
-    consumer["Consumer — src/main.consumer.ts<br/>bulk index · coalesce lastMessageAt per batch"]
-    es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>mapping applied, bulk writes work<br/>nothing produces documents yet")]
+    consumer["Consumer — src/main.consumer.ts<br/>eachBatch → one bulk request<br/>document id = message id, so replay overwrites"]
+    es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>content analysed · metadata flattened")]
 
     client -->|HTTPS| guard
     guard --> ctl
@@ -37,8 +37,8 @@ flowchart TD
     repo -.->|liveness only| redis
     mongo -->|oplog| dbz
     dbz -->|publish| kafka
-    kafka -.->|one partition per conversation| consumer
-    consumer -.->|bulk index, doc id = message id| es
+    kafka -->|one partition per conversation| consumer
+    consumer -->|bulk index| es
     consumer -.->|lastMessageAt| mongo
     ctl -.-> searchuc
     searchuc -.->|match and search_after| es
@@ -49,17 +49,19 @@ flowchart TD
     classDef plain fill:#f2f4f7,stroke:#8b95a1,stroke-width:1px,color:#11161d
 
     class client plain
-    class guard,ctl,uc,repo,mongo,dbz,kafka done
-    class redis,es wip
-    class consumer,searchuc todo
+    class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es done
+    class redis wip
+    class searchuc todo
 ```
 
 A message is written **once**, to MongoDB. Nothing publishes to Kafka on the
 request path — Debezium reads the oplog instead, so there is no moment where the
 message is stored but the event is lost.
 
-Elasticsearch is provisioned and can be written to, but the two dashed arrows into
-it are the gap: no process consumes the topic, and no endpoint queries the index.
+From there the consumer takes whole batches off the topic and indexes them in one
+bulk request. Posting a message makes it searchable in about three seconds with no
+manual step, verified on compose. The two dashed arrows are what remains: no
+endpoint queries the index yet, and nothing writes `lastMessageAt` back.
 
 ## Where each phase left off
 
@@ -70,7 +72,7 @@ it are the gap: no process consumes the topic, and no endpoint queries the index
 | M2 | Kafka in KRaft mode, Debezium connector, the SMT chain, topic keyed by conversation | done |
 | M3 | The Elasticsearch index schema — mapping, `dynamic: strict`, the apply step | done |
 | M3.1 | Bulk writes into the index, behind per-tenant aliases | done |
-| M3.2 | The consumer process that fills the index from the Kafka topic | not started |
+| M3.2 | The consumer process that fills the index from the Kafka topic | done |
 | M3.3 | `search_after` queries and the search endpoint | not started |
 | M3.4 | `lastMessageAt` on the conversation | not started |
 | M4 | README for a cold reader, ADRs, domain glossary | not started |
@@ -84,10 +86,8 @@ proven, but that nothing in the running system calls yet.
 
 ## Known gaps
 
-**Elasticsearch has no producer and no reader.** The mapping is applied and
-`MessageSearchIndex.indexMany` is covered against a real cluster, but the only
-thing that calls it is its own spec. The consumer arrives in M3.2, the search
-endpoint in M3.3.
+**Elasticsearch has no reader.** Documents flow in from the consumer, but nothing
+queries them until the search endpoint arrives in M3.3.
 
 **Search aliases are created on the write path.** `ensureAlias` creates a tenant's
 filtered alias the first time that tenant's messages are indexed, cached in a
@@ -99,11 +99,6 @@ neutralises it either way, are in [PLAN.md §10](./PLAN.md#10-deferred--tenant-p
 
 **Redis caches nothing.** It is configured, health-checked and proven reachable,
 but no use case caches anything through it. Caching is optional in the brief.
-
-**`pnpm start:consumer` is currently broken.** The script runs
-`node dist/main.consumer` and that file does not exist yet — it arrives with M3.2.
-Nothing else references it, so the failure is confined to anyone who runs that
-one command.
 
 **The topic name is written twice.** `KafkaTopic.MessageCreated` is injected into
 the connector config by `scripts/register-debezium.ts`, so the producer cannot
