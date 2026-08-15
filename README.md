@@ -89,9 +89,10 @@ docker exec techbank-interview-2-kafka-1 kafka-console-consumer \
 ```
 
 The event is the stored document, flattened — ids arrive as hex strings and dates
-as epoch milliseconds. Mongo's `_id` is renamed to `id` by the connector, so
-nothing downstream of the database has to know what the storage engine calls its
-primary key. A sample record is recorded in
+as epoch milliseconds. The document keeps Mongo's own field
+names, `_id` included: the only consumer is our indexer, inside the same bounded
+context, so a cosmetic rename would buy nothing. `_id` is kept out of the *API*
+by the response DTOs instead. A sample record is recorded in
 [docs/PLAN.md](docs/PLAN.md); M3 captures a fresh one as a fixture so the consumer
 specs can run without standing Kafka Connect up inside jest.
 

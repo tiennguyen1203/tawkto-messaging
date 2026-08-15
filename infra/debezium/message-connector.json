@@ -22,13 +22,10 @@
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
 
-    "transforms": "unwrap,renameId,rekey,extractKey,route",
+    "transforms": "unwrap,rekey,extractKey,route",
 
     "transforms.unwrap.type": "io.debezium.connector.mongodb.transforms.ExtractNewDocumentState",
     "transforms.unwrap.delete.tombstone.handling.mode": "rewrite",
-
-    "transforms.renameId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
-    "transforms.renameId.renames": "_id:id",
 
     "transforms.rekey.type": "org.apache.kafka.connect.transforms.ValueToKey",
     "transforms.rekey.fields": "conversationId",

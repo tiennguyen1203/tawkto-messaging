@@ -24,7 +24,7 @@ flowchart TD
 
     mongo[("MongoDB — replica set rs0<br/>conversations · messages<br/>indexes owned by migrations")]
     redis[("Redis<br/>health-checked, caches nothing yet")]
-    dbz["Debezium on Kafka Connect<br/>unwrap · rename _id to id · re-key"]
+    dbz["Debezium on Kafka Connect<br/>unwrap envelope · re-key by conversation"]
     kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-created.v1<br/>6 partitions · key = conversationId"]]
     consumer["Consumer — src/main.consumer.ts<br/>bulk index · coalesce lastMessageAt per batch"]
     es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>content analysed · metadata flattened")]
