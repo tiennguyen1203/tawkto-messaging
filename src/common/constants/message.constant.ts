@@ -10,3 +10,10 @@ export const MAX_MESSAGE_CONTENT_LENGTH = 4000;
  * ever want one.
  */
 export const MIN_CONVERSATION_PARTICIPANTS = 2;
+
+/**
+ * A search term longer than this is not a search, it is a paste. Bounding it
+ * keeps a single request from building an enormous boolean query out of one
+ * analysed field.
+ */
+export const MAX_SEARCH_TERM_LENGTH = 256;

@@ -1,16 +1,37 @@
+import { Client } from '@elastic/elasticsearch';
 import { Types } from 'mongoose';
 
 import { MAX_MESSAGE_CONTENT_LENGTH } from '@/common/constants';
+import { MessageSearchIndex } from '@/infra/elasticsearch/message-search.index';
+import { SearchHelper } from '@/test/search-helper';
 import { TestHelper } from '@/test/test-helper';
 import { ConversationFactory } from '@/test/factories/conversation.factory';
 import { MessagesController } from './controller';
 
 describe('@routers/messages/controller', () => {
   const testHelper = TestHelper.lightweightMode(MessagesController);
+  const searchHelper = new SearchHelper('controller-spec');
+  const SEARCH_TENANT = searchHelper.tenant('a');
+  let searchIndex: MessageSearchIndex;
 
-  beforeAll(() => testHelper.beforeAll(), 120_000);
-  afterAll(() => testHelper.afterAll());
-  afterEach(() => testHelper.cleanUp());
+  beforeAll(async () => {
+    await searchHelper.setUp();
+    searchIndex = new MessageSearchIndex(searchHelper.client);
+    // Built by SearchModule's factory from configuration, so the scanner cannot
+    // construct one; hand the controller's tree the container's client.
+    testHelper.provide(Client, searchHelper.client);
+    await testHelper.beforeAll();
+  }, 180_000);
+
+  afterAll(async () => {
+    await searchHelper.tearDown();
+    await testHelper.afterAll();
+  });
+
+  afterEach(async () => {
+    await searchHelper.cleanUp();
+    await testHelper.cleanUp();
+  });
 
   const alice = () =>
     testHelper.fakeUser({ id: 'alice', tenantId: 'tenant-a' });
@@ -211,6 +232,119 @@ describe('@routers/messages/controller', () => {
           .query({ limit: 10_000 })
           .requestedBy(alice())
           .expect(400);
+      });
+    });
+  });
+
+  describe('#GET /api/v1/conversations/:conversationId/messages/search', () => {
+    const searcher = () =>
+      testHelper.fakeUser({ id: 'alice', tenantId: SEARCH_TENANT });
+
+    const seed = async (conversationId: string, contents: string[]) => {
+      await searchIndex.applyWrites(
+        contents.map((content, i) => ({
+          op: 'index' as const,
+          document: {
+            messageId: searchHelper.id(`${conversationId}-${i}`),
+            tenantId: SEARCH_TENANT,
+            conversationId,
+            senderId: 'alice',
+            content,
+            timestamp: 1_786_763_181_000 + i,
+          },
+        })),
+      );
+      await searchHelper.refresh();
+    };
+
+    describe('when a term matches', () => {
+      it('should answer 200 with the page and a total', async () => {
+        const conversation = await new ConversationFactory(
+          SEARCH_TENANT,
+        ).create({ participantIds: ['alice'] });
+        const id = conversation._id.toString();
+        await seed(id, ['pangolin sighting', 'quokka sighting']);
+
+        const res = await testHelper.request
+          .get(`/api/v1/conversations/${id}/messages/search`)
+          .query({ q: 'pangolin' })
+          .requestedBy(searcher())
+          .expect(200);
+
+        expect(res.body.data).toMatchObject({
+          nextCursor: null,
+          hasMore: false,
+          total: 1,
+        });
+        expect(res.body.data.items).toHaveLength(1);
+        expect(res.body.data.items[0]).toMatchObject({
+          conversationId: id,
+          senderId: 'alice',
+          content: 'pangolin sighting',
+        });
+      });
+    });
+
+    describe('when q is missing', () => {
+      it('should answer 400 rather than searching for nothing', async () => {
+        const conversation = await new ConversationFactory(
+          SEARCH_TENANT,
+        ).create({ participantIds: ['alice'] });
+
+        await testHelper.request
+          .get(
+            `/api/v1/conversations/${conversation._id.toString()}/messages/search`,
+          )
+          .requestedBy(searcher())
+          .expect(400);
+      });
+    });
+
+    describe('when q is only whitespace', () => {
+      it('should answer 400, because a blank term matches nothing', async () => {
+        const conversation = await new ConversationFactory(
+          SEARCH_TENANT,
+        ).create({ participantIds: ['alice'] });
+
+        await testHelper.request
+          .get(
+            `/api/v1/conversations/${conversation._id.toString()}/messages/search`,
+          )
+          .query({ q: '   ' })
+          .requestedBy(searcher())
+          .expect(400);
+      });
+    });
+
+    describe('when the request carries no token', () => {
+      it('should answer 401', async () => {
+        const conversation = await new ConversationFactory(
+          SEARCH_TENANT,
+        ).create({ participantIds: ['alice'] });
+
+        await testHelper.request
+          .get(
+            `/api/v1/conversations/${conversation._id.toString()}/messages/search`,
+          )
+          .query({ q: 'pangolin' })
+          .expect(401);
+      });
+    });
+
+    describe('when the conversation belongs to another tenant', () => {
+      it('should answer 404, never 403', async () => {
+        // A 403 would confirm the conversation exists, which is itself a leak.
+        const conversation = await new ConversationFactory(
+          searchHelper.tenant('b'),
+        ).create({ participantIds: ['bob'] });
+
+        await testHelper.request
+          .get(
+            `/api/v1/conversations/${conversation._id.toString()}/messages/search`,
+          )
+          .query({ q: 'pangolin' })
+          .requestedBy(searcher())
+          .expect(404);
       });
     });
   });

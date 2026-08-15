@@ -2,13 +2,13 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M3.2 — message changes reach Elasticsearch end to end.** Conversations
-and messages can be created and listed with cursor pagination, scoped to a tenant by
-the repository rather than by its callers. Every change reaches Kafka through Debezium
-without the application dual-writing, and the consumer applies whole batches behind a
-filtered alias per tenant: a message posted through the API is in Elasticsearch about
-two seconds later, editing it replaces the indexed copy, and deleting it removes it.
-What remains is the search endpoint (M3.3) that queries it. See
+**Status: M3.3 — the search path is closed end to end.** Conversations and messages
+can be created and listed with cursor pagination, scoped to a tenant by the repository
+rather than by its callers. Every change reaches Kafka through Debezium without the
+application dual-writing, and the consumer applies whole batches behind a filtered
+alias per tenant: a message posted through the API is searchable about two seconds
+later, editing it replaces the indexed copy, and deleting it removes it. What remains
+is `lastMessageAt` (M3.4) and the documentation pass (M4). See
 [docs/PLAN.md](docs/PLAN.md) for the milestones,
 [docs/architecture.md](docs/architecture.md) for what is wired to what, and
 [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
@@ -21,7 +21,7 @@ the partitioning decisions.
 | `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
 | `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
 | `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
-| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | M3.3 |
+| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored |
 | `GET` | `/api/health` | Public |
 
 Another tenant's conversation answers **404**, never 403 — a 403 would confirm it

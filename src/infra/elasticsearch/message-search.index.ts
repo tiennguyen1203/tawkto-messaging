@@ -2,6 +2,11 @@ import { Client, estypes } from '@elastic/elasticsearch';
 import { Injectable } from '@nestjs/common';
 
 import { MESSAGES_INDEX, messageAliasFor } from '@/common/constants';
+import {
+  decodeCursor,
+  encodeCursor,
+  PageResult,
+} from '@/common/pagination/cursor';
 
 /**
  * A document as the search index maps it.
@@ -36,6 +41,42 @@ export type MessageSearchDocument = {
 export type MessageIndexWrite =
   | { op: 'index'; document: MessageSearchDocument }
   | { op: 'delete'; tenantId: string; messageId: string };
+
+export type MessageSearchQuery = {
+  tenantId: string;
+  conversationId: string;
+  /**
+   * The text to match against message content.
+   *
+   * Not called `term`: Elasticsearch's `term` is an exact, unanalysed lookup —
+   * the opposite of what this does — and the two would sit two lines apart in
+   * the query below.
+   */
+  text: string;
+  limit: number;
+  cursor?: string;
+};
+
+/**
+ * `total` is required here where the listing endpoint omits it: Elasticsearch
+ * reports a hit count as a by-product of the query, whereas counting a keyset
+ * page in MongoDB would be a second, unbounded scan (ADR-004).
+ */
+export type MessageSearchPage = PageResult<MessageSearchDocument> & {
+  total: number;
+};
+
+/**
+ * The `sort` tuple Elasticsearch echoes back for a hit — the score, then the
+ * tie-breaking message id. Opaque to callers, which is why it travels encoded.
+ */
+type SearchCursor = [number, string];
+
+/**
+ * Counting every hit exactly costs a full scan. Ten thousand is far past what a
+ * person reads, and the response says the number is approximate (ADR-004).
+ */
+const TOTAL_HITS_CEILING = 10_000;
 
 const identityOf = (write: MessageIndexWrite) =>
   write.op === 'index'
@@ -165,5 +206,59 @@ export class MessageSearchIndex {
 
       throw new Error(`Indexing failed: ${JSON.stringify(failed?.error)}`);
     }
+  }
+
+  /**
+   * Full-text search within one conversation, paginated with `search_after`.
+   *
+   * `from`/`size` would be simpler but caps out at 10,000 results and pays to
+   * re-walk every skipped hit; `search_after` costs the same at page 500 as at
+   * page 1. The trade-off is that pages can only be walked forward (ADR-004).
+   *
+   * Reads never provision. A tenant with nothing indexed has no alias, and
+   * `ignore_unavailable` turns that into an empty page rather than an error —
+   * creating the alias here would make a search quietly write to the cluster.
+   */
+  async search(query: MessageSearchQuery): Promise<MessageSearchPage> {
+    const after = decodeCursor<SearchCursor>(query.cursor);
+
+    const response = await this.client.search<MessageSearchDocument>({
+      index: messageAliasFor(query.tenantId),
+      ignore_unavailable: true,
+      allow_no_indices: true,
+      // One more than asked for: its presence is what says another page exists,
+      // without a second query to count.
+      size: query.limit + 1,
+      track_total_hits: TOTAL_HITS_CEILING,
+      query: {
+        bool: {
+          // `conversationId` filters rather than matches: it is a keyword, the
+          // clause contributes no score, and a filter clause is cacheable.
+          filter: [{ term: { conversationId: query.conversationId } }],
+          must: [{ match: { content: query.text } }],
+        },
+      },
+      // `_score` alone is not a stable order — equal scores may come back in any
+      // order, and a page boundary in the middle of a tie would repeat or skip a
+      // hit. `messageId` breaks the tie with a value that never repeats.
+      sort: [{ _score: { order: 'desc' } }, { messageId: { order: 'asc' } }],
+      ...(after ? { search_after: after } : {}),
+    });
+
+    const hits = response.hits.hits;
+    const hasMore = hits.length > query.limit;
+    const page = hasMore ? hits.slice(0, query.limit) : hits;
+    const last = page[page.length - 1];
+
+    return {
+      items: page.map((hit) => hit._source!),
+      nextCursor:
+        hasMore && last?.sort ? encodeCursor(last.sort as SearchCursor) : null,
+      hasMore,
+      total:
+        typeof response.hits.total === 'number'
+          ? response.hits.total
+          : (response.hits.total?.value ?? 0),
+    };
   }
 }

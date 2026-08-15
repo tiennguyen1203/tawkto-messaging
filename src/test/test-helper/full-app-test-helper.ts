@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { ClsService } from 'nestjs-cls';
 
 import { AppModule } from '@/app.module';
+import { SearchContainer } from '../search-container';
 import { setupApp } from '@/main.setup';
 import request from '../supertest-helper';
 import { BaseTestHelper } from './shared';
@@ -11,9 +12,9 @@ import { BaseTestHelper } from './shared';
  * Loads the entire AppModule. Use when the lightweight modes cannot express what
  * is under test — module wiring, the caching module, ModuleRefSingleton.
  *
- * The database is pinned by createDatabase() writing MONGO_URI into the
- * environment before Nest boots, so MongooseConfigService picks up the test
- * container without needing an override.
+ * The infrastructure is pinned by writing MONGO_URI and ELASTICSEARCH_NODE into
+ * the environment before Nest boots, so the configuration-driven providers pick
+ * up the test containers without needing an override.
  */
 export class FullAppTestHelper extends BaseTestHelper {
   app!: INestApplication;
@@ -33,6 +34,11 @@ export class FullAppTestHelper extends BaseTestHelper {
   async beforeAll() {
     this.silenceLogger();
     await this.databaseHelper.createDatabase();
+    // Same trick as MONGO_URI above: SearchModule builds its client from
+    // configuration, so the container's address has to be in the environment
+    // before Nest reads it. Only this mode boots the real module — the
+    // lightweight modes are handed a client with .provide(Client, ...).
+    process.env.ELASTICSEARCH_NODE = SearchContainer.getNode();
 
     const module = await Test.createTestingModule({
       imports: [AppModule],

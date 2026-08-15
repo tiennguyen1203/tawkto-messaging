@@ -120,7 +120,7 @@ export abstract class BaseTestHelper<TUnit = any> {
   protected databaseHelper = new DatabaseHelper();
   protected mockConfigs: MockConfig[] = [];
   protected realProviders = new Set<Type>();
-  protected tokenProviders = new Map<string | symbol, any>();
+  protected tokenProviders = new Map<string | symbol | Type, any>();
   protected extraImports: any[] = [];
   protected testCls = new TestClsService();
 
@@ -148,7 +148,15 @@ export abstract class BaseTestHelper<TUnit = any> {
     return this;
   }
 
-  provide(token: string | symbol, value: any): this {
+  /**
+   * Hands the unit a dependency the scanner cannot build itself.
+   *
+   * Class tokens are accepted as well as string ones: a provider a module
+   * configures through `useFactory` — the Elasticsearch `Client`, say — is
+   * registered under its class but cannot be constructed by scanning, since the
+   * factory is where its configuration lives.
+   */
+  provide(token: string | symbol | Type, value: any): this {
     this.tokenProviders.set(token, value);
     return this;
   }

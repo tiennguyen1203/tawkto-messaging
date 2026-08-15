@@ -1,17 +1,22 @@
 import { Global, Module } from '@nestjs/common';
 
+import { SearchModule } from '@/infra/elasticsearch/module';
+
 import { CreateConversationUseCase } from './conversation/create-conversation/usecase';
 import { CreateMessageUseCase } from './message/create-message/usecase';
 import { GetConversationMessagesUseCase } from './message/get-conversation-messages/usecase';
+import { SearchConversationMessagesUseCase } from './message/search-conversation-messages/usecase';
 
 const useCases = [
   CreateConversationUseCase,
   CreateMessageUseCase,
   GetConversationMessagesUseCase,
+  SearchConversationMessagesUseCase,
 ];
 
 @Global()
 @Module({
+  imports: [SearchModule],
   providers: [...useCases],
   exports: [...useCases],
 })

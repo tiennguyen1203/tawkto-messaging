@@ -287,6 +287,128 @@ describe('@infra/elasticsearch/message-search.index', () => {
     });
   });
 
+  describe('#search', () => {
+    const seed = (count: number, tenantId = TENANT_A, conversationId = 'c1') =>
+      applyAndRefresh(
+        Array.from({ length: count }, (_, i) =>
+          write({
+            messageId: `${conversationId}-${i}`,
+            tenantId,
+            conversationId,
+            content: `alpha bravo message number ${i}`,
+            timestamp: 1_786_763_181_000 + i,
+          }),
+        ),
+      );
+
+    const ask = (overrides: Partial<Parameters<typeof index.search>[0]> = {}) =>
+      index.search({
+        tenantId: TENANT_A,
+        conversationId: 'c1',
+        text: 'bravo',
+        limit: 10,
+        ...overrides,
+      });
+
+    describe('when a term matches', () => {
+      it('should return the matching messages', async () => {
+        await seed(3);
+
+        const page = await ask();
+
+        expect(page.items).toHaveLength(3);
+        expect(page.hasMore).toBe(false);
+        expect(page.nextCursor).toBeNull();
+        expect(page.total).toBe(3);
+      });
+    });
+
+    describe('when the term appears in no message', () => {
+      it('should return an empty page', async () => {
+        await seed(3);
+
+        expect((await ask({ text: 'zulu' })).items).toEqual([]);
+      });
+    });
+
+    describe('when another tenant holds identical content', () => {
+      it('should not return it', async () => {
+        await seed(2, TENANT_A);
+        await seed(2, TENANT_B);
+
+        const page = await ask({ limit: 50 });
+
+        expect(page.items).toHaveLength(2);
+        expect(page.items.every((m) => m.tenantId === TENANT_A)).toBe(true);
+      });
+    });
+
+    describe('when another conversation in the same tenant matches', () => {
+      it('should not return it', async () => {
+        await seed(2, TENANT_A, 'c1');
+        await seed(2, TENANT_A, 'c2');
+
+        const page = await ask({ limit: 50 });
+
+        expect(page.items.every((m) => m.conversationId === 'c1')).toBe(true);
+      });
+    });
+
+    describe('when there are more hits than the page size', () => {
+      it('should walk every hit exactly once across pages', async () => {
+        // Every message scores identically here, which is the case a sort on
+        // `_score` alone gets wrong: without the messageId tiebreaker the page
+        // boundary falls inside a tie and hits repeat or vanish.
+        await seed(7);
+
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        let pages = 0;
+
+        do {
+          const page = await ask({ limit: 3, cursor });
+          seen.push(...page.items.map((m) => m.messageId));
+          cursor = page.nextCursor ?? undefined;
+          pages += 1;
+        } while (cursor && pages < 10);
+
+        expect(seen).toHaveLength(7);
+        expect(new Set(seen).size).toBe(7);
+      });
+    });
+
+    describe('when the cursor cannot be read', () => {
+      it('should serve the first page rather than failing', async () => {
+        await seed(2);
+
+        expect((await ask({ cursor: 'not-a-real-cursor' })).items).toHaveLength(
+          2,
+        );
+      });
+    });
+
+    describe('when the tenant has never been indexed', () => {
+      it('should return an empty page rather than a missing-index error', async () => {
+        const page = await ask({ tenantId: helper.tenant('never-seen') });
+
+        expect(page.items).toEqual([]);
+        expect(page.hasMore).toBe(false);
+        expect(page.total).toBe(0);
+      });
+
+      it('should not create an alias, because reading must not provision', async () => {
+        const tenantId = helper.tenant('read-only');
+
+        await ask({ tenantId });
+
+        const exists = await helper.client.indices.existsAlias({
+          name: messageAliasFor(tenantId),
+        });
+        expect(exists).toBe(false);
+      });
+    });
+  });
+
   describe('when the batch is empty', () => {
     it('should do nothing rather than send an empty bulk request', async () => {
       await expect(index.applyWrites([])).resolves.toBeUndefined();

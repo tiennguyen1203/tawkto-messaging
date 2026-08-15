@@ -332,7 +332,7 @@ only thing under review.
 
 **After that, nothing lands before its caller.** Each remaining part is a thin
 vertical slice that ends with something demonstrable end to end: the write path
-first, then the read path. That is why `indexMany` sits with the consumer that
+first, then the read path. That is why the write path sits with the consumer that
 fills the index and `search` sits with the endpoint that queries it, rather than
 both arriving together as a finished "index layer" whose second half nothing calls
 for two more parts.
@@ -361,8 +361,8 @@ and a document carrying an unmapped field is rejected
 
 #### M3.1 — Writing to the index
 
-- `MessageSearchIndex.indexMany`: one `_bulk` request per batch, documents keyed by
-  message id, grouped so each tenant's writes go through its own alias
+- `MessageSearchIndex.applyWrites`: one `_bulk` request per batch, documents keyed
+  by message id, each write addressed to its tenant's alias
 - Per-tenant filtered alias provisioning, created on first write for a tenant
 - Test harness: an Elasticsearch testcontainer, applying the same template file
   `es:apply-templates` uses — so a mapping change cannot pass the tests and fail in
@@ -377,7 +377,7 @@ their alias, and indexing the same message twice leaves one document
 - `MessageChangeEvent`: the TypeScript contract for the Debezium record,
   deliberately not written in M2, where nothing consumed one
 - `main.consumer.ts` as a second entrypoint over the same image
-- **Batch-shaped, not message-shaped**: `eachBatch` feeding `indexMany`.
+- **Batch-shaped, not message-shaped**: `eachBatch` feeding `applyWrites`.
   Per-document indexing tops out near 220 messages a second and would become the
   pipeline's ceiling long before Kafka is (D22, docs/back-of-envelope.md) — this is
   what makes the hot-partition risk accepted in D21 defensible, so it ships in the
@@ -473,6 +473,28 @@ Topic creation is now its own deploy step (D38).
 **Done when:** a term posted through `POST /api/messages` is findable through the
 endpoint, another tenant's identical text is not, and paging walks every hit
 exactly once
+
+**Verified on a running stack**, not assumed:
+
+| Check | Result |
+|---|---|
+| Term posted through the API, then searched | found within ~2s, scoped to the conversation |
+| Another tenant asking for that conversation | **404**, though it holds a message with identical text |
+| `q` missing · blank · no token | 400 · 400 · 401 |
+| Paging at `limit=1` | walked every hit exactly once, `hasMore` false on the last page |
+
+Two decisions worth stating, because both could reasonably have gone the other way.
+
+**MongoDB is asked first, and it is what answers "may this caller see this
+conversation".** Searching Elasticsearch directly would return an empty page for
+another tenant's conversation, which a client reads as "no matches" — indistinguishable
+from an empty conversation of their own. The tenant-scoped repository turns that
+into a 404, which is also what the listing endpoint answers, so the two agree.
+
+**Reads never provision.** `search` does not call `ensureAlias`: a tenant with
+nothing indexed has no alias, and `ignore_unavailable` turns that into an empty page.
+Creating the alias on a read would mean a search quietly writes to the cluster, and
+any stranger's tenant id would leave a permanent artefact behind.
 
 #### M3.4 — `lastMessageAt`
 

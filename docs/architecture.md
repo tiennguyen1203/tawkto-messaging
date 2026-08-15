@@ -40,8 +40,8 @@ flowchart TD
     kafka -->|one partition per conversation| consumer
     consumer -->|index and delete, in event order| es
     consumer -.->|lastMessageAt| mongo
-    ctl -.-> searchuc
-    searchuc -.->|match and search_after| es
+    ctl --> searchuc
+    searchuc -->|match and search_after| es
 
     classDef done fill:#e7f4ec,stroke:#17804a,stroke-width:2px,color:#11161d
     classDef wip fill:#fbf2df,stroke:#a2700a,stroke-width:2px,color:#11161d
@@ -49,9 +49,8 @@ flowchart TD
     classDef plain fill:#f2f4f7,stroke:#8b95a1,stroke-width:1px,color:#11161d
 
     class client plain
-    class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es done
+    class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es,searchuc done
     class redis wip
-    class searchuc todo
 ```
 
 A message is written **once**, to MongoDB. Nothing publishes to Kafka on the
@@ -64,8 +63,9 @@ takes whole batches off it and turns each event into one Elasticsearch operation
 the order the events arrived: a create and an edit both write the document whole, a
 deletion removes it. Posting a message makes it searchable in about two seconds,
 editing it replaces the indexed copy, and deleting it removes it — all verified on
-compose. The two dashed arrows are what remains: no endpoint queries the index yet,
-and nothing writes `lastMessageAt` back.
+compose, as is searching it: a term posted through the API is findable within a
+couple of seconds, scoped to one conversation and one tenant. The single dashed
+arrow left is `lastMessageAt`, which nothing writes back yet.
 
 ## Where each phase left off
 
@@ -77,7 +77,7 @@ and nothing writes `lastMessageAt` back.
 | M3 | The Elasticsearch index schema — mapping, `dynamic: strict`, the apply step | done |
 | M3.1 | Bulk writes into the index, behind per-tenant aliases | done |
 | M3.2 | The consumer process that fills the index from the Kafka topic | done |
-| M3.3 | `search_after` queries and the search endpoint | not started |
+| M3.3 | `search_after` queries and the search endpoint | done |
 | M3.4 | `lastMessageAt` on the conversation | not started |
 | M4 | README for a cold reader, ADRs, domain glossary | not started |
 
@@ -89,9 +89,6 @@ Amber marks something narrower than work in progress: a part that exists and is
 proven, but that nothing in the running system calls yet.
 
 ## Known gaps
-
-**Elasticsearch has no reader.** Documents flow in from the consumer, but nothing
-queries them until the search endpoint arrives in M3.3.
 
 **Search aliases are created on the write path.** `ensureAlias` creates a tenant's
 filtered alias the first time that tenant's messages are indexed, cached in a
