@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { Client } from '@elastic/elasticsearch';
 import {
   INestApplication,
   Type,
@@ -26,6 +27,7 @@ import { ConnectionSingleton } from '@/infra/database/connection.singleton';
 import { AppClsModule } from '@/infra/cls/module';
 import { scanDependencies } from '../scan-dependencies';
 import request from '../supertest-helper';
+import { SearchContainer } from '../search-container';
 import {
   BaseTestHelper,
   buildMockMap,
@@ -38,7 +40,18 @@ import {
  * scanned dependency tree, the real guard chain, and the real global filter and
  * interceptor — so status codes and response envelopes are exercised for real.
  */
+/**
+ * The Elasticsearch client SearchModule builds from configuration. The scanner
+ * cannot construct it — the factory is where its address lives — so the harness
+ * supplies one pointed at the run's container, exactly as it does for the mongoose
+ * connection. Specs that never search still need it, because MessageRepository
+ * depends on the index whether or not a given test calls `search`.
+ */
+const searchClientForTests = () =>
+  new Client({ node: SearchContainer.getNode() });
+
 export class ControllerTestHelper extends BaseTestHelper {
+  private _searchClient?: Client;
   private app!: INestApplication;
   private _connection!: Connection;
 
@@ -80,8 +93,17 @@ export class ControllerTestHelper extends BaseTestHelper {
       // string token, not by the Connection class, so register it under both.
       { provide: getConnectionToken(), useValue: connection },
       { provide: CachingService, useValue: cachingService },
+      {
+        provide: Client,
+        useValue: (this._searchClient = searchClientForTests()),
+      },
       ...real.filter(
-        (dep) => dep !== CachingService && !providedByModules.has(dep),
+        // Both are supplied above as values. Left in the list, Nest would try to
+        // construct them itself — and `new Client()` with no options throws.
+        (dep) =>
+          dep !== CachingService &&
+          dep !== Client &&
+          !providedByModules.has(dep),
       ),
       ...mockedInTree.map((dep) => ({
         provide: dep,

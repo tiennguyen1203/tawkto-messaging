@@ -1,9 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ClsService } from 'nestjs-cls';
 
-import { AppClsStore } from '@/infra/cls/module';
 import { ConversationRepository } from '@/cores/repositories/conversation.repository';
-import { MessageSearchIndex } from '@/infra/elasticsearch/message-search.index';
+import { MessageRepository } from '@/cores/repositories/message.repository';
 import {
   BaseUseCase,
   NotFoundUseCaseError,
@@ -17,8 +15,7 @@ export class SearchConversationMessagesUseCase extends BaseUseCase<
 > {
   constructor(
     private readonly conversationRepository: ConversationRepository,
-    private readonly searchIndex: MessageSearchIndex,
-    private readonly cls: ClsService<AppClsStore>,
+    private readonly messageRepository: MessageRepository,
   ) {
     super(new Logger(SearchConversationMessagesUseCase.name));
   }
@@ -40,25 +37,11 @@ export class SearchConversationMessagesUseCase extends BaseUseCase<
       throw new NotFoundUseCaseError('Conversation not found.');
     }
 
-    // The index is not a tenant-scoped repository: it also serves the consumer,
-    // which runs outside any request and has no CLS to read. So the tenant
-    // travels as an argument here rather than ambiently — taken from the verified
-    // token, never from anything the caller sent.
-    //
-    // Throwing rather than searching unscoped, for the same reason the repository
-    // does: every failure mode of a missing tenant is a leak. Unreachable in
-    // practice — the conversation lookup above already ran through a tenant-scoped
-    // repository, which would have thrown first.
-    const tenantId = this.cls.isActive() ? this.cls.get('tenantId') : undefined;
-
-    if (!tenantId) {
-      throw new Error(
-        'SearchConversationMessagesUseCase was used outside a tenant context.',
-      );
-    }
-
-    const page = await this.searchIndex.search({
-      tenantId,
+    // No tenant is passed. The repository inherits it from the request the same
+    // way every other query does — this use case has no business knowing which
+    // tenant it is serving, and there is one fewer place for that to be got
+    // wrong.
+    const page = await this.messageRepository.search({
       conversationId: input.conversationId,
       text: input.text,
       limit: input.limit,

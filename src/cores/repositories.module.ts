@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 
+import { SearchModule } from '@/infra/elasticsearch/module';
 import { ConversationRepository } from './repositories/conversation.repository';
 import { MessageRepository } from './repositories/message.repository';
 
@@ -24,6 +25,7 @@ const repositories = [ConversationRepository, MessageRepository];
 
 @Global()
 @Module({
+  imports: [SearchModule],
   providers: [connectionAlias, ...repositories],
   exports: [...repositories],
 })

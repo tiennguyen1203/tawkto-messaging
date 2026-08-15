@@ -8,11 +8,13 @@ import { TestBed, type UnitReference } from '@suites/unit';
 // which silently breaks it as a DI token — the mock is applied to `undefined`
 // and the unit receives an auto-mock whose .model() returns nothing.
 import { Connection, createConnection } from 'mongoose';
+import { Client } from '@elastic/elasticsearch';
 import { ClsService } from 'nestjs-cls';
 
 import { ModuleRefSingleton } from '@/module-ref.singleton';
 import { ConnectionSingleton } from '@/infra/database/connection.singleton';
 import { CachingService } from '@/infra/caching/service';
+import { SearchContainer } from '../search-container';
 import { scanDependencies } from '../scan-dependencies';
 import {
   BaseTestHelper,
@@ -31,7 +33,18 @@ import {
  * tokens. That is precisely why repositories take the mongoose `Connection`
  * rather than `@InjectModel(...)` — see D3.
  */
+/**
+ * The Elasticsearch client SearchModule builds from configuration. The scanner
+ * cannot construct it — the factory is where its address lives — so the harness
+ * supplies one pointed at the run's container, exactly as it does for the mongoose
+ * connection. Specs that never search still need it, because MessageRepository
+ * depends on the index whether or not a given test calls `search`.
+ */
+const searchClientForTests = () =>
+  new Client({ node: SearchContainer.getNode() });
+
 export class ProviderTestHelper<TUnit = any> extends BaseTestHelper<TUnit> {
+  private _searchClient?: Client;
   private _unit!: TUnit;
   private _unitRef!: UnitReference;
   private _connection!: Connection;
@@ -96,6 +109,10 @@ export class ProviderTestHelper<TUnit = any> extends BaseTestHelper<TUnit> {
     if (needs('ClsService')) {
       configured = configured.mock(ClsService).final(this.testCls);
     }
+    if (needs('Client') && !this.tokenProviders.has(Client)) {
+      this._searchClient = searchClientForTests();
+      configured = configured.mock(Client).final(this._searchClient);
+    }
 
     for (const dep of mockedInTree) {
       const instance = createMockInstance(allMocks.get(dep)!);
@@ -136,6 +153,7 @@ export class ProviderTestHelper<TUnit = any> extends BaseTestHelper<TUnit> {
   override async afterAll() {
     await super.afterAll();
     await this._connection?.close();
+    await this._searchClient?.close();
   }
 
   override get<TInput = any, TResult = TInput>(

@@ -1,4 +1,3 @@
-import { Client } from '@elastic/elasticsearch';
 import { Types } from 'mongoose';
 
 import { MAX_MESSAGE_CONTENT_LENGTH } from '@/common/constants';
@@ -17,9 +16,6 @@ describe('@routers/messages/controller', () => {
   beforeAll(async () => {
     await searchHelper.setUp();
     searchIndex = new MessageSearchIndex(searchHelper.client);
-    // Built by SearchModule's factory from configuration, so the scanner cannot
-    // construct one; hand the controller's tree the container's client.
-    testHelper.provide(Client, searchHelper.client);
     await testHelper.beforeAll();
   }, 180_000);
 

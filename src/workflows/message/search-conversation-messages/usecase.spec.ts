@@ -1,4 +1,3 @@
-import { Client } from '@elastic/elasticsearch';
 import { Types } from 'mongoose';
 
 import { MessageSearchIndex } from '@/infra/elasticsearch/message-search.index';
@@ -22,10 +21,6 @@ describe('@workflows/message/search-conversation-messages', () => {
   beforeAll(async () => {
     await searchHelper.setUp();
     index = new MessageSearchIndex(searchHelper.client);
-
-    // The client is built by SearchModule's factory from configuration, so the
-    // dependency scanner cannot construct one; hand it the container's.
-    testHelper.provide(Client, searchHelper.client);
 
     await testHelper.beforeAll();
     usecase = testHelper.unit;
@@ -114,6 +109,29 @@ describe('@workflows/message/search-conversation-messages', () => {
       expect(error).toBeNull();
       expect(data!.items).toEqual([]);
       expect(data!.total).toBe(0);
+    });
+  });
+
+  describe('when another tenant has indexed the same conversation id', () => {
+    it('should return only the caller tenant messages', async () => {
+      // Nothing in the use case names a tenant any more — the repository supplies
+      // it. This is the test that fails if it supplies the wrong one, or none:
+      // the 404 case below would still pass, because it never reaches the index.
+      const conversation = await seedConversation();
+      const id = conversation._id.toString();
+
+      await seedMessages(id, ['pangolin sighting, ours']);
+      await seedMessages(id, ['pangolin sighting, theirs'], OTHER_TENANT);
+
+      const { data } = await usecase.execute({
+        conversationId: id,
+        text: 'pangolin',
+        limit: 10,
+      });
+
+      expect(data!.items.map((m) => m.content)).toEqual([
+        'pangolin sighting, ours',
+      ]);
     });
   });
 
