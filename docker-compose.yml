@@ -112,6 +112,35 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Single-node Elasticsearch for the message search index.
+  #
+  # Security off and a small heap on purpose: this is a local development
+  # dependency, not a cluster. The multi-tenant index layout is ADR-003.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    ports:
+      - '${ELASTICSEARCH_HOST_PORT:-9200}:9200'
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: 'false'
+      ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+      # A one-node cluster can never allocate replicas, so leave shard
+      # allocation alone rather than letting the watermark turn it read-only.
+      cluster.routing.allocation.disk.threshold_enabled: 'false'
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -sf http://localhost:9200/_cluster/health | grep -q ''"status":"\(green\|yellow\)"''',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
   # Applies index migrations, then exits. Run it before the api the first time:
   #   docker compose up migrate
   migrate:
@@ -153,3 +182,4 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  elasticsearch_data:

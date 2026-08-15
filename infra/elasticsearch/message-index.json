@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Applied by scripts/apply-es-templates.ts. The index name and the alias pattern",
+    "come from MESSAGES_INDEX / messageAliasFor() so the application and this file",
+    "cannot disagree about where documents live.",
+    "Mapping notes are in docs/PLAN.md (ADR-003)."
+  ],
+  "index_patterns": ["messages-v*"],
+  "priority": 500,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "1s"
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "messageId": { "type": "keyword" },
+        "tenantId": { "type": "keyword" },
+        "conversationId": { "type": "keyword" },
+        "senderId": { "type": "keyword" },
+        "content": { "type": "text", "analyzer": "standard" },
+        "timestamp": { "type": "date", "format": "epoch_millis||strict_date_optional_time" },
+        "metadata": { "type": "flattened" }
+      }
+    }
+  }
+}

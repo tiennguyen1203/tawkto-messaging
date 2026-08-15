@@ -22,6 +22,7 @@
     "migrate:create": "migrate-mongo create",
     "debezium:register": "TS_NODE_PROJECT=tsconfig.scripts.json ts-node -r tsconfig-paths/register scripts/register-debezium.ts",
     "debezium:status": "curl -s ${KAFKA_CONNECT_URL:-http://localhost:8083}/connectors/messaging-message-connector/status",
+    "es:apply-templates": "TS_NODE_PROJECT=tsconfig.scripts.json ts-node -r tsconfig-paths/register scripts/apply-es-templates.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json"
   },
   "engines": {

@@ -2,11 +2,13 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M2 — messages stream to Kafka via CDC.** Conversations and messages can
-be created and listed with cursor pagination, scoped to a tenant by the repository
-rather than by its callers; every insert reaches Kafka through Debezium without the
-application dual-writing. The Elasticsearch consumer and search endpoint (M3) are
-not wired yet; see [docs/PLAN.md](docs/PLAN.md) for the milestones and
+**Status: M3 — the search index exists; nothing writes to it yet.** Conversations
+and messages can be created and listed with cursor pagination, scoped to a tenant by
+the repository rather than by its callers; every insert reaches Kafka through Debezium
+without the application dual-writing. Elasticsearch now has its mapping, applied as a
+deploy step — but the consumer that fills it (M3.2) and the search endpoint (M3.3) are
+not built. See [docs/PLAN.md](docs/PLAN.md) for the milestones,
+[docs/architecture.md](docs/architecture.md) for what is wired to what, and
 [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
 the partitioning decisions.
 
@@ -17,7 +19,7 @@ the partitioning decisions.
 | `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
 | `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
 | `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
-| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | M3 |
+| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | M3.3 |
 | `GET` | `/api/health` | Public |
 
 Another tenant's conversation answers **404**, never 403 — a 403 would confirm it
@@ -37,15 +39,20 @@ exists. A known conversation with a non-participant sender answers **403**.
 pnpm install
 cp .env.example .env
 
-# MongoDB (single-node replica set), Redis, Kafka and Debezium.
+# MongoDB (single-node replica set), Redis, Kafka, Debezium and Elasticsearch.
 # Kafka Connect is a JVM and takes ~60s to report healthy.
-docker compose up -d mongo redis kafka kafka-connect
-docker compose ps            # wait for all four to be healthy
+docker compose up -d mongo redis kafka kafka-connect elasticsearch
+docker compose ps            # wait for all five to be healthy
 
-pnpm migrate:up              # creates the indexes
+pnpm migrate:up              # creates the MongoDB indexes
+pnpm es:apply-templates      # creates the Elasticsearch index and its mapping
 pnpm debezium:register       # installs the CDC connector
 pnpm start:dev
 ```
+
+The two provisioning steps are separate commands rather than boot-time work for the
+same reason: replicas would race each other, and a mapping or an index that fails to
+apply should stop a deploy rather than a request. Both are idempotent.
 
 Then:
 
@@ -93,7 +100,7 @@ as epoch milliseconds. The document keeps Mongo's own field
 names, `_id` included: the only consumer is our indexer, inside the same bounded
 context, so a cosmetic rename would buy nothing. `_id` is kept out of the *API*
 by the response DTOs instead. A sample record is recorded in
-[docs/PLAN.md](docs/PLAN.md); M3 captures a fresh one as a fixture so the consumer
+[docs/PLAN.md](docs/PLAN.md); M3.2 captures a fresh one as a fixture so the consumer
 specs can run without standing Kafka Connect up inside jest.
 
 ### Processes
@@ -105,7 +112,7 @@ scale independently.
 | Entrypoint | Role | Status |
 |---|---|---|
 | `src/main.ts` | HTTP API | M1 |
-| `src/main.consumer.ts` | Kafka consumer → Elasticsearch indexer | M3 |
+| `src/main.consumer.ts` | Kafka consumer → Elasticsearch indexer | M3.2 |
 | *(Kafka Connect)* | Debezium MongoDB connector — infrastructure, not our code | M2 |
 
 ### Layers
@@ -114,7 +121,7 @@ scale independently.
 routers/      HTTP controllers and DTOs — no business logic
 workflows/    use cases — one per directory; business rules live here
 cores/        persistence models, repositories
-infra/        database, logging, CLS, caching, kafka, elasticsearch
+infra/        database, logging, CLS, caching — Elasticsearch joins in M3.1
 common/       cross-cutting: base repository, guards, filters, interceptors
 ```
 
@@ -205,8 +212,9 @@ which resolves through a string token the scanner cannot follow.
 |---|---|
 | `pnpm build` | Compile with `tsc` (not the Nest CLI — see D26 in the plan) |
 | `pnpm start:dev` | HTTP API with watch mode |
-| `pnpm start:consumer` | Kafka consumer (M3) |
-| `pnpm migrate:up` / `migrate:down` | Apply / roll back index migrations |
+| `pnpm start:consumer` | Kafka consumer (M3.2) |
+| `pnpm migrate:up` / `migrate:down` | Apply / roll back MongoDB index migrations |
+| `pnpm es:apply-templates` | Apply the Elasticsearch mapping and create the index (idempotent) |
 | `pnpm migrate:create <name>` | Scaffold a migration |
 | `pnpm debezium:register` | Install or update the CDC connector (idempotent) |
 | `pnpm debezium:status` | Connector and task state |

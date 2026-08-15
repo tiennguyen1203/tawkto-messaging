@@ -12,6 +12,7 @@ export const env = {
   ROOT_DIR: '',
 };
 
+export * from './elasticsearch.constant';
 export * from './kafka.constant';
 export * from './message.constant';
 export * from './timezone.constant';
