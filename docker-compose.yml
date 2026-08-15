@@ -193,6 +193,35 @@ services:
       - app
     restart: unless-stopped
 
+  # Tenants and users, and the tokens that carry them. Same image again — see
+  # ADR-007 for why this is a second context rather than a second repository.
+  identity-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['node', 'dist/identity/main']
+    ports:
+      - '${IDENTITY_PORT:-3001}:3001'
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      IDENTITY_PORT: 3001
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # The same secret messaging verifies with. One deployable, one key — the
+      # moment these are separate services this becomes a key distribution
+      # problem, and that is the point at which asymmetric signing earns its keep.
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-32-character-secret-value}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - app
+    restart: unless-stopped
+
   # The indexer. Same image as the API, different command — it consumes the CDC
   # topic and writes to Elasticsearch, and is scaled by consumer lag rather than
   # by request rate.

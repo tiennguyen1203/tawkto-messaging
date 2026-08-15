@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { commonModules } from './app.module';
+import { messagingModules } from './app.module';
 import { ConsumersModule } from './consumers/module';
 
 /**
@@ -8,6 +8,6 @@ import { ConsumersModule } from './consumers/module';
  * the Kafka subscription, and none of the HTTP layer.
  */
 @Module({
-  imports: [...commonModules, ConsumersModule],
+  imports: [...messagingModules, ConsumersModule],
 })
 export class ConsumerModule {}

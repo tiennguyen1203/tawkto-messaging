@@ -48,14 +48,19 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@/common/enums/*', '!@/common/enums'],
+              group: ['@/messaging/common/enums/*', '!@/messaging/common/enums'],
               message:
-                'Import from @/common/enums instead of individual files',
+                'Import from @/messaging/common/enums instead of individual files',
             },
             {
-              group: ['@/common/constants/*', '!@/common/constants'],
+              group: [
+                  '@/shared/constants/*',
+                  '!@/shared/constants',
+                  '@/messaging/common/constants/*',
+                  '!@/messaging/common/constants',
+                ],
               message:
-                'Import from @/common/constants instead of individual files',
+                'Import the constants barrel, not an individual file inside it',
             },
           ],
         },
@@ -84,6 +89,29 @@ export default tseslint.config(
               group: ['@/identity', '@/identity/*', '@/identity/**'],
               message:
                 'messaging must not import from identity. Contexts share the kernel (common/, infra/), never each other — see ADR-007. What messaging needs to know about a tenant arrives in the verified JWT, or over a topic.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The kernel must not know its consumers. A shared module that imports a
+    // context is that context's code sitting in the wrong directory — which is
+    // exactly what `commonModules` had become before the split.
+    files: ['src/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/messaging', '@/messaging/*', '@/messaging/**',
+                '@/identity', '@/identity/*', '@/identity/**',
+              ],
+              message:
+                'shared/ must not import a bounded context — see ADR-007. If shared code needs something a context has, take it as a parameter (see FullAppTestHelper and setupApp).',
             },
           ],
         },

@@ -1,8 +1,8 @@
 import { Types } from 'mongoose';
 
 import { TestHelper } from '@/shared/test/test-helper';
-import { ConversationFactory } from '@/shared/test/factories/conversation.factory';
-import { MessageFactory } from '@/shared/test/factories/message.factory';
+import { ConversationFactory } from '@/messaging/test/factories/conversation.factory';
+import { MessageFactory } from '@/messaging/test/factories/message.factory';
 import { UseCaseErrorType } from '@/shared/use-case/base-use-case';
 import { GetConversationMessagesUseCase } from './usecase';
 

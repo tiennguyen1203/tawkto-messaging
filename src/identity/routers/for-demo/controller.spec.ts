@@ -1,0 +1,206 @@
+import { TestHelper } from '@/shared/test/test-helper';
+import { ForDemoController } from './controller';
+
+describe('@identity/routers/for-demo/controller', () => {
+  const testHelper = TestHelper.lightweightMode(ForDemoController);
+
+  beforeAll(() => testHelper.beforeAll(), 120_000);
+  afterAll(() => testHelper.afterAll());
+  afterEach(() => testHelper.cleanUp());
+
+  const createTenant = async (name = 'Acme Corp'): Promise<string> => {
+    const res = await testHelper.request
+      .post('/api/v1/for-demo/tenants')
+      .send({ name })
+      .expect(201);
+    return res.body.data.id as string;
+  };
+
+  const createUser = async (
+    tenantId: string,
+    email = 'alice@acme.test',
+    roles: string[] = ['user'],
+  ) => {
+    const res = await testHelper.request
+      .post('/api/v1/for-demo/users')
+      .send({ tenantId, email, displayName: 'Alice', roles })
+      .expect(201);
+    return res.body.data;
+  };
+
+  describe('#POST /for-demo/tenants', () => {
+    describe('when a name is given', () => {
+      it('should answer 201 with the created tenant', async () => {
+        const res = await testHelper.request
+          .post('/api/v1/for-demo/tenants')
+          .send({ name: 'Acme Corp' })
+          .expect(201);
+
+        expect(res.body.data).toMatchObject({ name: 'Acme Corp' });
+        expect(res.body.data.id).toEqual(expect.any(String));
+      });
+    });
+
+    describe('when the name is blank', () => {
+      it('should answer 400', async () => {
+        await testHelper.request
+          .post('/api/v1/for-demo/tenants')
+          .send({ name: '   ' })
+          .expect(400);
+      });
+    });
+
+    describe('when no token is supplied', () => {
+      it('should still answer 201, because a token comes from here', async () => {
+        // The route is public by necessity rather than by oversight: requiring a
+        // token to obtain the first token is a closed loop. What keeps that from
+        // being a hole is the environment guard, covered below.
+        await testHelper.request
+          .post('/api/v1/for-demo/tenants')
+          .send({ name: 'No Token Needed' })
+          .expect(201);
+      });
+    });
+  });
+
+  describe('#POST /for-demo/users', () => {
+    describe('when the tenant exists', () => {
+      it('should answer 201 with the user in that tenant', async () => {
+        const tenantId = await createTenant();
+
+        const user = await createUser(tenantId);
+
+        expect(user).toMatchObject({
+          tenantId,
+          email: 'alice@acme.test',
+          displayName: 'Alice',
+          roles: ['user'],
+        });
+      });
+    });
+
+    describe('when the tenant does not exist', () => {
+      it('should answer 404 rather than creating an unreachable user', async () => {
+        // A user in a tenant that does not exist would still be issued a token,
+        // and messaging would accept it — it only checks the signature.
+        await testHelper.request
+          .post('/api/v1/for-demo/users')
+          .send({
+            tenantId: '6a7f352caefeeac0e37bd99c',
+            email: 'ghost@acme.test',
+            displayName: 'Ghost',
+          })
+          .expect(404);
+      });
+    });
+
+    describe('when the email is already used in that tenant', () => {
+      it('should answer 409', async () => {
+        const tenantId = await createTenant();
+        await createUser(tenantId);
+
+        await testHelper.request
+          .post('/api/v1/for-demo/users')
+          .send({
+            tenantId,
+            email: 'alice@acme.test',
+            displayName: 'Alice Again',
+          })
+          .expect(409);
+      });
+    });
+
+    describe('when the same email is used in a different tenant', () => {
+      it('should answer 201, because tenants do not share a namespace', async () => {
+        const first = await createTenant('First');
+        const second = await createTenant('Second');
+        await createUser(first);
+
+        await createUser(second);
+      });
+    });
+  });
+
+  describe('#GET /for-demo/users', () => {
+    describe('when a tenant has users', () => {
+      it('should list only that tenant users', async () => {
+        const mine = await createTenant('Mine');
+        const theirs = await createTenant('Theirs');
+        await createUser(mine, 'alice@acme.test');
+        await createUser(theirs, 'bob@other.test');
+
+        const res = await testHelper.request
+          .get('/api/v1/for-demo/users')
+          .query({ tenantId: mine })
+          .expect(200);
+
+        expect(
+          res.body.data.items.map((u: { email: string }) => u.email),
+        ).toEqual(['alice@acme.test']);
+      });
+    });
+  });
+
+  describe('#POST /for-demo/tokens', () => {
+    describe('when the user exists', () => {
+      it('should answer 201 with a token carrying that user tenant and roles', async () => {
+        const tenantId = await createTenant();
+        const user = await createUser(tenantId, 'alice@acme.test', ['admin']);
+
+        const res = await testHelper.request
+          .post('/api/v1/for-demo/tokens')
+          .send({ userId: user.id })
+          .expect(201);
+
+        const payload = JSON.parse(
+          Buffer.from(
+            (res.body.data.accessToken as string).split('.')[1],
+            'base64url',
+          ).toString(),
+        ) as { sub: string; tenantId: string; roles: string[] };
+
+        // The claims messaging reads. If these drift, every request it serves is
+        // scoped to the wrong thing.
+        expect(payload).toMatchObject({
+          sub: user.id,
+          tenantId,
+          roles: ['admin'],
+        });
+      });
+    });
+
+    describe('when the user does not exist', () => {
+      it('should answer 404 rather than signing a token for nobody', async () => {
+        await testHelper.request
+          .post('/api/v1/for-demo/tokens')
+          .send({ userId: '6a7f352caefeeac0e37bd99c' })
+          .expect(404);
+      });
+    });
+  });
+
+  describe('when the environment is not a local one', () => {
+    it('should refuse every seeding route', async () => {
+      // The path says what shape these endpoints are; this is what says who may
+      // call them. Reachable in production they would be an open door to every
+      // tenant's data, so the guard fails closed on an environment it does not
+      // recognise.
+      const original = process.env.APP_ENV;
+      process.env.APP_ENV = 'prod';
+
+      try {
+        await testHelper.request
+          .post('/api/v1/for-demo/tenants')
+          .send({ name: 'Should Not Exist' })
+          .expect(403);
+
+        await testHelper.request
+          .post('/api/v1/for-demo/tokens')
+          .send({ userId: '6a7f352caefeeac0e37bd99c' })
+          .expect(403);
+      } finally {
+        process.env.APP_ENV = original;
+      }
+    });
+  });
+});

@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 
 import { MessageRepository } from '@/messaging/cores/repositories/message.repository';
 import { TestHelper } from '@/shared/test/test-helper';
-import { ConversationFactory } from '@/shared/test/factories/conversation.factory';
+import { ConversationFactory } from '@/messaging/test/factories/conversation.factory';
 import { UseCaseErrorType } from '@/shared/use-case/base-use-case';
 import { CreateMessageUseCase } from './usecase';
 

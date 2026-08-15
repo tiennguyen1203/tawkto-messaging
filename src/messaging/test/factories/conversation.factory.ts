@@ -5,7 +5,7 @@ import { ConversationModel } from '@/messaging/cores/models/conversation.model';
 import { ConversationRepository } from '@/messaging/cores/repositories/conversation.repository';
 import { CachingService } from '@/shared/infra/caching/service';
 import { ConnectionSingleton } from '@/shared/infra/database/connection.singleton';
-import { BaseFactory } from './base.factory';
+import { BaseFactory } from '@/shared/test/factories/base.factory';
 
 /**
  * Factories write directly, bypassing the tenant scoping the repository applies

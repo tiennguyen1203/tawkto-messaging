@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 
 import { MessageSearchIndex } from '@/messaging/infra/elasticsearch/message-search.index';
-import { ConversationFactory } from '@/shared/test/factories/conversation.factory';
+import { ConversationFactory } from '@/messaging/test/factories/conversation.factory';
 import { SearchHelper } from '@/messaging/test/search-helper';
 import { TestHelper } from '@/shared/test/test-helper';
 import { UseCaseErrorType } from '@/shared/use-case/base-use-case';

@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 
-import { ConversationFactory } from '@/shared/test/factories/conversation.factory';
+import { ConversationFactory } from '@/messaging/test/factories/conversation.factory';
 import { TestHelper } from '@/shared/test/test-helper';
 import { ConversationRepository } from './conversation.repository';
 

@@ -4,7 +4,7 @@ import { MESSAGES_COLLECTION } from '@/messaging/cores/models/message.model';
 import { MessageRepository } from '@/messaging/cores/repositories/message.repository';
 import { ConnectionSingleton } from '@/shared/infra/database/connection.singleton';
 import { TestHelper } from '@/shared/test/test-helper';
-import { MessageFactory } from '@/shared/test/factories/message.factory';
+import { MessageFactory } from '@/messaging/test/factories/message.factory';
 
 /**
  * `autoIndex` is off everywhere, so an index exists only if a migration created

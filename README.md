@@ -17,12 +17,28 @@ See [docs/architecture.md](docs/architecture.md) for what is wired to what,
 
 ## Endpoints
 
+### Messaging — `localhost:3000`
+
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
 | `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
 | `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
 | `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored |
+| `GET` | `/api/health` | Public |
+
+### Identity — `localhost:3001`
+
+Seeding for a local demonstration. `for-demo` is in the path because these
+endpoints hand out a token to whoever names a user, without checking anything —
+and `ForDemoOnlyGuard` refuses all of them outside a local environment.
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/v1/for-demo/tenants` | Creates a tenant |
+| `POST` | `/api/v1/for-demo/users` | Creates a user inside one |
+| `GET` | `/api/v1/for-demo/users?tenantId=` | Lists a tenant's users — what the picker UI will read |
+| `POST` | `/api/v1/for-demo/tokens` | Issues a token for a user id. No credential is checked |
 | `GET` | `/api/health` | Public |
 
 Another tenant's conversation answers **404**, never 403 — a 403 would confirm it
@@ -59,7 +75,7 @@ pnpm start:consumer          # the indexer, in a second terminal
 Or run the services themselves in containers, from the same image:
 
 ```bash
-docker compose --profile app up -d messaging-api messaging-consumer
+docker compose --profile app up -d messaging-api messaging-consumer identity-api
 ```
 
 The provisioning steps above still run from the host — they are TypeScript tools and
@@ -135,18 +151,20 @@ document whole, deletions remove it.
 ### Processes
 
 One image, several entrypoints. They share `commonModules` from
-[src/app.module.ts](src/app.module.ts) and are deployed as separate services so they
+[src/messaging/app.module.ts](src/messaging/app.module.ts) and are deployed as separate services so they
 scale independently.
 
 | Entrypoint | Compose service | Role |
 |---|---|---|
 | `src/messaging/main.ts` | `messaging-api` | HTTP API |
 | `src/messaging/main.consumer.ts` | `messaging-consumer` | Kafka → Elasticsearch indexer |
+| `src/identity/main.ts` | `identity-api` | Tenants, users and the tokens that carry them |
 | `migrate-mongo` | `migrate` | One-shot migration runner |
 | *(Kafka Connect)* | `kafka-connect` | Debezium connector — infrastructure, not our code |
 
-All three of ours are **one image with a different command**, not three Dockerfiles.
-Identity will join as another compose service, not another build.
+All of ours are **one image with a different command**, not several Dockerfiles —
+the image has no default, so a container that names no command prints the choices and
+exits rather than silently starting the wrong one.
 
 ### Layers
 
@@ -173,9 +191,9 @@ to do instead. See [ADR-007](docs/adr/007-contexts-in-one-deployable.md).
 ### Multi-tenancy
 
 `tenantId` is read once from the verified JWT by
-[JwtStrategy](src/common/auth-passport/jwt.strategy.ts), pushed into CLS, and read
+[JwtStrategy](src/shared/auth-passport/jwt.strategy.ts), pushed into CLS, and read
 from there by
-[TenantScopedRepository](src/common/tenant-scoped.repository.ts). It is never
+[TenantScopedRepository](src/shared/tenant-scoped.repository.ts). It is never
 accepted from a request body, param or query string.
 
 Every inherited method that takes a filter is overridden to apply it, and writes
@@ -204,9 +222,9 @@ becomes `{}`. A read then returns an arbitrary document — in a multi-tenant sy
 someone else's — and `updateMany` / `deleteMany` affect every document in the
 collection. Neither raises an error.
 
-[BaseRepository](src/common/base.repository.ts) refuses any call whose conditions
+[BaseRepository](src/shared/base.repository.ts) refuses any call whose conditions
 all evaporated, turning a silent breach into a loud failure.
-[base.repository.spec.ts](src/common/base.repository.spec.ts) covers it.
+[base.repository.spec.ts](src/shared/base.repository.spec.ts) covers it.
 
 ### Indexes
 
@@ -240,7 +258,7 @@ fails the suite rather than surviving to production.
 
 ## Testing utilities
 
-Three modes, chosen automatically by [TestHelper](src/test/test-helper.ts):
+Three modes, chosen automatically by [TestHelper](src/shared/test/test-helper.ts):
 
 ```ts
 // Use case or repository — scans the dependency tree, exposes only what is needed
@@ -280,14 +298,14 @@ Roughly in the order a newcomer needs them.
 
 | | |
 |---|---|
-| [CONTEXT.md](CONTEXT.md) | What the words mean — tenant, conversation, change event, read model — and the two rules that explain most of the code |
+| [CONTEXT-MAP.md](CONTEXT-MAP.md) | The two bounded contexts, how they relate, and a glossary for each |
 | [docs/architecture.md](docs/architecture.md) | Component map: what is built, what is not, and the known gaps |
 | [docs/adr/](docs/adr/) | Seven decision records, each with the trade-off it accepted |
 | [docs/PLAN.md](docs/PLAN.md) | The running log — every decision D1–D38, the milestones, what was verified on a running stack |
 | [docs/back-of-envelope.md](docs/back-of-envelope.md) | The capacity estimate behind the Kafka partitioning trade-off |
 | [docs/testing-conventions.md](docs/testing-conventions.md) | The when/should naming pattern, what is tested at which layer, and how load-bearing tests are proven non-vacuous |
 
-If you read only one after this file, read [CONTEXT.md](CONTEXT.md). If you read
+If you read only one after this file, read [CONTEXT-MAP.md](CONTEXT-MAP.md). If you read
 only one decision record, read
 [ADR-002](docs/adr/002-cdc-not-outbox.md) — change data capture instead of a
 transactional outbox is the choice the rest of the system hangs off.

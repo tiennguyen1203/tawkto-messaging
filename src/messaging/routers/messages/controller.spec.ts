@@ -4,7 +4,7 @@ import { MAX_MESSAGE_CONTENT_LENGTH } from '@/messaging/common/constants';
 import { MessageSearchIndex } from '@/messaging/infra/elasticsearch/message-search.index';
 import { SearchHelper } from '@/messaging/test/search-helper';
 import { TestHelper } from '@/shared/test/test-helper';
-import { ConversationFactory } from '@/shared/test/factories/conversation.factory';
+import { ConversationFactory } from '@/messaging/test/factories/conversation.factory';
 import { MessagesController } from './controller';
 
 describe('@routers/messages/controller', () => {

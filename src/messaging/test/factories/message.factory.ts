@@ -7,7 +7,7 @@ import { MessageModel } from '@/messaging/cores/models/message.model';
 import { MessageRepository } from '@/messaging/cores/repositories/message.repository';
 import { MessageSearchIndex } from '@/messaging/infra/elasticsearch/message-search.index';
 import { ConnectionSingleton } from '@/shared/infra/database/connection.singleton';
-import { BaseFactory } from './base.factory';
+import { BaseFactory } from '@/shared/test/factories/base.factory';
 
 const anyTenantCls = (tenantId: string) =>
   ({
