@@ -2,7 +2,7 @@
   "name": "techbank-messaging-api",
   "private": true,
   "version": "1.0.0",
-  "description": "Message management API \u2014 NestJS, MongoDB, Kafka, Elasticsearch",
+  "description": "Message management API — NestJS, MongoDB, Kafka, Elasticsearch",
   "license": "MIT",
   "scripts": {
     "prebuild": "rm -rf dist",
@@ -29,6 +29,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@elastic/elasticsearch": "^8.19.2",
     "@keyv/redis": "5.1.4",
     "@nestjs/cache-manager": "3.0.1",
     "@nestjs/common": "^11.0.1",
@@ -70,6 +71,7 @@
     "@suites/di.nestjs": "3.0.1",
     "@suites/doubles.jest": "3.0.1",
     "@suites/unit": "3.0.1",
+    "@testcontainers/elasticsearch": "^12.1.0",
     "@testcontainers/mongodb": "^11.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",

@@ -2,12 +2,13 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M3 — the search index exists; nothing writes to it yet.** Conversations
-and messages can be created and listed with cursor pagination, scoped to a tenant by
-the repository rather than by its callers; every insert reaches Kafka through Debezium
-without the application dual-writing. Elasticsearch now has its mapping, applied as a
-deploy step — but the consumer that fills it (M3.2) and the search endpoint (M3.3) are
-not built. See [docs/PLAN.md](docs/PLAN.md) for the milestones,
+**Status: M3.1 — the search index and the way into it are built; nothing feeds it
+yet.** Conversations and messages can be created and listed with cursor pagination,
+scoped to a tenant by the repository rather than by its callers; every insert reaches
+Kafka through Debezium without the application dual-writing. Elasticsearch has its
+mapping and bulk writes land behind a filtered alias per tenant — but the consumer
+that would feed it (M3.2) and the search endpoint (M3.3) are not built. See
+[docs/PLAN.md](docs/PLAN.md) for the milestones,
 [docs/architecture.md](docs/architecture.md) for what is wired to what, and
 [docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
 the partitioning decisions.
@@ -121,7 +122,7 @@ scale independently.
 routers/      HTTP controllers and DTOs — no business logic
 workflows/    use cases — one per directory; business rules live here
 cores/        persistence models, repositories
-infra/        database, logging, CLS, caching — Elasticsearch joins in M3.1
+infra/        database, logging, CLS, caching, elasticsearch
 common/       cross-cutting: base repository, guards, filters, interceptors
 ```
 
@@ -177,15 +178,21 @@ from inside jest, with no build step in between.
 ## Testing
 
 ```bash
-pnpm test          # unit + integration, against a real MongoDB in testcontainers
+pnpm test          # unit + integration, against a real MongoDB and Elasticsearch
 pnpm test:cov
 pnpm lint
 pnpm exec tsc --noEmit -p tsconfig.json
 ```
 
-Integration tests start one MongoDB container for the whole run and give each test
-file its own database inside it, so files stay isolated and can run in parallel.
-No local MongoDB is required — Docker is.
+Integration tests start one MongoDB container and one Elasticsearch container for
+the whole run, concurrently — Elasticsearch is a JVM and costs far more to start, so
+the run pays the slower of the two rather than the sum. Each test file gets its own
+database inside the MongoDB container, so files stay isolated and can run in
+parallel. Elasticsearch specs share the one index and empty it between tests.
+
+No local MongoDB or Elasticsearch is required — Docker is. The Elasticsearch specs
+apply the same mapping file `pnpm es:apply-templates` uses, so a mapping mistake
+fails the suite rather than surviving to production.
 
 ## Testing utilities
 
