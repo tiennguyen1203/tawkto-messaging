@@ -17,8 +17,9 @@ there is the part worth keeping.
 | [004](./004-cursor-pagination.md) | Cursor pagination, and no exact `total` | Accepted |
 | [005](./005-indexes-in-migrations.md) | Indexes live in migrations, `autoIndex` off | Accepted |
 | [006](./006-ordering-by-server-timestamp.md) | Ordering by server `timestamp` with `_id` as tiebreaker | Accepted |
+| [007](./007-contexts-in-one-deployable.md) | Bounded contexts in one deployable, boundaries enforced by lint | Accepted |
 
-The numbered decisions in [PLAN.md §2](../PLAN.md) (D1–D38) are the finer-grained
+The numbered decisions in [PLAN.md §2](../PLAN.md) (D1–D43) are the finer-grained
 running log — every choice made along the way, including ones too small for a
-record of their own. These seven are the ones a reader needs to understand the
+record of their own. These eight are the ones a reader needs to understand the
 shape of the system.

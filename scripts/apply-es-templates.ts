@@ -10,16 +10,14 @@
  *   pnpm es:apply-templates
  */
 import * as fs from 'fs';
-import * as path from 'path';
 
-import { MESSAGES_INDEX } from '@/common/constants';
+import {
+  MESSAGE_INDEX_TEMPLATE_PATH,
+  MESSAGES_INDEX,
+} from '@/messaging/common/constants';
 
 const ES_NODE = process.env.ELASTICSEARCH_NODE ?? 'http://localhost:9200';
 const TEMPLATE_NAME = 'messages';
-const TEMPLATE_PATH = path.join(
-  __dirname,
-  '../infra/elasticsearch/message-index.json',
-);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -60,10 +58,9 @@ const waitForElasticsearch = async (attempts = 60): Promise<void> => {
 };
 
 const main = async (): Promise<void> => {
-  const file = JSON.parse(fs.readFileSync(TEMPLATE_PATH, 'utf8')) as Record<
-    string,
-    unknown
-  >;
+  const file = JSON.parse(
+    fs.readFileSync(MESSAGE_INDEX_TEMPLATE_PATH, 'utf8'),
+  ) as Record<string, unknown>;
   delete file._comment;
 
   await waitForElasticsearch();

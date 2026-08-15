@@ -63,6 +63,51 @@ export default tseslint.config(
     },
   },
   {
+    // ── Bounded context boundaries ────────────────────────────────────────
+    //
+    // What makes src/messaging a context rather than a folder. Contexts sit on
+    // the shared kernel below them — common/, infra/, health-check/ — and never
+    // on each other. Composition roots (app.module, consumer.module, main*.ts)
+    // sit above every context and may wire them together; that is what a
+    // composition root is for.
+    //
+    // Two contexts in one deployable is a decision about packaging, not about
+    // boundaries. This rule is what stops the two quietly becoming one thing.
+    // See ADR-007.
+    files: ['src/messaging/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/identity', '@/identity/*', '@/identity/**'],
+              message:
+                'messaging must not import from identity. Contexts share the kernel (common/, infra/), never each other — see ADR-007. What messaging needs to know about a tenant arrives in the verified JWT, or over a topic.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/identity/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/messaging', '@/messaging/*', '@/messaging/**'],
+              message:
+                'identity must not import from messaging. Contexts share the kernel (common/, infra/), never each other — see ADR-007.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Operational scripts are command-line tools: printing is their output.
     files: ['scripts/**/*.ts'],
     rules: {

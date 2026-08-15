@@ -9,12 +9,12 @@
     },
     "typeRoots": [
       "./node_modules/@types",
-      "src/types"
+      "src/shared/typings"
     ]
   },
   "include": [
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
-    "src/types/*.d.ts"
+    "src/shared/typings/*.d.ts"
   ]
 }

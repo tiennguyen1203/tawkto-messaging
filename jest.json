@@ -17,7 +17,7 @@
     "^@/(.*)$": "<rootDir>/$1"
   },
   "rootDir": "src",
-  "globalSetup": "<rootDir>/test/jest-setups/global-setup.ts",
-  "globalTeardown": "<rootDir>/test/jest-setups/global-teardown.ts",
+  "globalSetup": "<rootDir>/shared/test/jest-setups/global-setup.ts",
+  "globalTeardown": "<rootDir>/shared/test/jest-setups/global-teardown.ts",
   "testTimeout": 30000
 }

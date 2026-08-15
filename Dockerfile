@@ -62,6 +62,17 @@ EXPOSE 3000
 
 ENTRYPOINT ["dumb-init", "--"]
 
-# Overridden per service in docker-compose: the API, the Kafka consumer, and the
-# one-shot migration runner all share this image.
-CMD ["node", "dist/main"]
+# No default service, on purpose.
+#
+# This image carries several processes — see ADR-001 — and defaulting to one of
+# them means a container whose `command:` was forgotten starts as something else.
+# A second API where the indexer should be does not crash; it just quietly never
+# indexes, and the symptom is that search results stop appearing hours later.
+# Failing here costs seconds. Every caller states which process it wants.
+CMD ["sh", "-c", "\
+echo 'This image runs one process per container. Pass the command you want:' >&2; \
+echo '' >&2; \
+echo '  node dist/messaging/main             the HTTP API' >&2; \
+echo '  node dist/messaging/main.consumer    the Kafka to Elasticsearch indexer' >&2; \
+echo '  node_modules/.bin/migrate-mongo up   the one-shot migration runner' >&2; \
+exit 1"]

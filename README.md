@@ -56,6 +56,20 @@ pnpm start:dev               # the API
 pnpm start:consumer          # the indexer, in a second terminal
 ```
 
+Or run the services themselves in containers, from the same image:
+
+```bash
+docker compose --profile app up -d messaging-api messaging-consumer
+```
+
+The provisioning steps above still run from the host — they are TypeScript tools and
+the production image ships runtime dependencies only. `migrate` is the exception and
+has its own compose service, because `migrate-mongo` is a runtime dependency:
+
+```bash
+docker compose --profile migrate run --rm migrate
+```
+
 The provisioning steps are separate commands rather than boot-time work for the same
 reason: replicas would race each other, and a mapping, an index or a topic that fails
 to apply should stop a deploy rather than a request. All are idempotent.
@@ -124,21 +138,37 @@ One image, several entrypoints. They share `commonModules` from
 [src/app.module.ts](src/app.module.ts) and are deployed as separate services so they
 scale independently.
 
-| Entrypoint | Role | Status |
+| Entrypoint | Compose service | Role |
 |---|---|---|
-| `src/main.ts` | HTTP API | M1 |
-| `src/main.consumer.ts` | Kafka consumer → Elasticsearch indexer | M3.2 |
-| *(Kafka Connect)* | Debezium MongoDB connector — infrastructure, not our code | M2 |
+| `src/messaging/main.ts` | `messaging-api` | HTTP API |
+| `src/messaging/main.consumer.ts` | `messaging-consumer` | Kafka → Elasticsearch indexer |
+| `migrate-mongo` | `migrate` | One-shot migration runner |
+| *(Kafka Connect)* | `kafka-connect` | Debezium connector — infrastructure, not our code |
+
+All three of ours are **one image with a different command**, not three Dockerfiles.
+Identity will join as another compose service, not another build.
 
 ### Layers
 
 ```
-routers/      HTTP controllers and DTOs — no business logic
-workflows/    use cases — one per directory; business rules live here
-cores/        persistence models, repositories
-infra/        database, logging, CLS, caching, elasticsearch
-common/       cross-cutting: base repository, guards, filters, interceptors
+messaging/            the bounded context — everything about conversations and messages
+  routers/            HTTP controllers and DTOs — no business logic
+  workflows/          use cases — one per directory; business rules live here
+  cores/              persistence models, repositories
+  consumers/          the Kafka → Elasticsearch indexer
+
+common/               shared kernel: base repository and model, base use case,
+                      guards, filters, interceptors, route config
+infra/                shared kernel: database, logging, CLS, caching, elasticsearch
+health-check/         process-level liveness, owned by no context
+
+app.module.ts         composition roots — above every context, and the only place
+consumer.module.ts    allowed to wire them together
 ```
+
+A context may use the shared kernel; it may not reach into another context. That is
+a lint rule, not a convention — `pnpm lint` fails on a crossing import and says what
+to do instead. See [ADR-007](docs/adr/007-contexts-in-one-deployable.md).
 
 ### Multi-tenancy
 

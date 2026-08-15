@@ -14,8 +14,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { MESSAGE_CHANGED_PARTITIONS } from '@/common/constants';
-import { KafkaTopic } from '@/common/enums';
+import { MESSAGE_CHANGED_PARTITIONS } from '@/messaging/common/constants';
+import { KafkaTopic } from '@/messaging/common/enums';
 
 type ConnectorFile = {
   name: string;

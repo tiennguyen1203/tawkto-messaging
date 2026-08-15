@@ -17,8 +17,8 @@
  */
 import { Kafka } from 'kafkajs';
 
-import { MESSAGE_CHANGED_PARTITIONS } from '@/common/constants';
-import { KafkaTopic } from '@/common/enums';
+import { MESSAGE_CHANGED_PARTITIONS } from '@/messaging/common/constants';
+import { KafkaTopic } from '@/messaging/common/enums';
 
 const BROKERS = (process.env.KAFKA_BROKERS ?? 'localhost:9094')
   .split(',')

@@ -69,6 +69,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
       test:
         [
@@ -147,7 +149,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ['pnpm', 'migrate:up']
+    # Not `pnpm migrate:up`: the production stage installs runtime dependencies
+    # only and has no pnpm, so the script name resolves to nothing. The binary is
+    # present because migrate-mongo is a runtime dependency — and it is invoked
+    # directly rather than through `node`, since .bin entries are shell wrappers.
+    command: ['node_modules/.bin/migrate-mongo', 'up']
     environment:
       MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
     depends_on:
@@ -156,10 +162,13 @@ services:
     profiles:
       - migrate
 
-  api:
+  # One image, one command each — see ADR-001. Identity joins as another service
+  # here, not as another Dockerfile.
+  messaging-api:
     build:
       context: .
       dockerfile: Dockerfile
+    command: ['node', 'dist/messaging/main']
     ports:
       - '${PORT:-3000}:3000'
     environment:
@@ -170,10 +179,44 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-32-character-secret-value}
+      # The API reads the search index too — MessageRepository is the one door to
+      # messages whichever store answers, so it builds an Elasticsearch client.
+      ELASTICSEARCH_NODE: http://elasticsearch:9200
     depends_on:
       mongo:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    profiles:
+      - app
+    restart: unless-stopped
+
+  # The indexer. Same image as the API, different command — it consumes the CDC
+  # topic and writes to Elasticsearch, and is scaled by consumer lag rather than
+  # by request rate.
+  messaging-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['node', 'dist/messaging/main.consumer']
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-32-character-secret-value}
+      # The in-compose listener, not the 9094 the host uses.
+      KAFKA_BROKERS: kafka:9092
+      ELASTICSEARCH_NODE: http://elasticsearch:9200
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     profiles:
       - app
@@ -183,3 +226,6 @@ volumes:
   mongo_data:
   redis_data:
   elasticsearch_data:
+  # Without this, `docker compose down` takes every topic and every committed
+  # offset with it, and the consumer then dies on a topic that no longer exists.
+  kafka_data:
