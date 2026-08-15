@@ -94,10 +94,17 @@ Without it, the ceiling sits inside the range of a real use case.
 
 ## 5. Design implications
 
-1. **`lastMessageAt` must be coalesced per batch.** Within a batch of 1,000 messages for
-   one conversation, issue a single conditional update carrying the maximum timestamp, not
-   1,000 updates. Otherwise MongoDB (~660 msg/s on its own) simply becomes the new
-   bottleneck the moment Elasticsearch stops being one.
+1. **`lastMessageAt` must be coalesced per batch** — *if it is written at all.*
+   Within a batch of 1,000 messages for one conversation, a naive consumer issues
+   1,000 MongoDB updates to maintain a single value; coalescing makes that one.
+
+   **This was not built.** M3.4 dropped the `lastMessageAt` write entirely, because
+   no endpoint reads the field — see PLAN.md §6. The numbers above stand: dropping a
+   write only moves the ceiling further out. The reasoning is kept because the same
+   coalescing applies to the next per-conversation counter anyone adds — an unread
+   count, an activity feed — and because it is half of why the consumer is
+   batch-shaped rather than message-shaped. Uncoalesced, MongoDB (~660 msg/s on its
+   own) simply becomes the new bottleneck the moment Elasticsearch stops being one.
 2. **Bulk indexing is mandatory in M3, not an optimization.** It is the single change that
    makes the hot-partition risk theoretical rather than reachable.
 

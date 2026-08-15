@@ -2,17 +2,18 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: M3.3 — the search path is closed end to end.** Conversations and messages
-can be created and listed with cursor pagination, scoped to a tenant by the repository
-rather than by its callers. Every change reaches Kafka through Debezium without the
-application dual-writing, and the consumer applies whole batches behind a filtered
-alias per tenant: a message posted through the API is searchable about two seconds
-later, editing it replaces the indexed copy, and deleting it removes it. What remains
-is `lastMessageAt` (M3.4) and the documentation pass (M4). See
-[docs/PLAN.md](docs/PLAN.md) for the milestones,
-[docs/architecture.md](docs/architecture.md) for what is wired to what, and
-[docs/back-of-envelope.md](docs/back-of-envelope.md) for the capacity analysis behind
-the partitioning decisions.
+**Status: the three endpoints in the brief are built, verified on a running stack,
+and documented.** Conversations and messages can be created and listed with cursor
+pagination, scoped to a tenant by the repository rather than by its callers. Every
+change reaches Kafka through Debezium without the application dual-writing, and the
+consumer applies whole batches behind a filtered alias per tenant: a message posted
+through the API is searchable about two seconds later, editing it replaces the indexed
+copy, and deleting it removes it.
+
+What is deliberately absent is listed [below](#what-is-deliberately-not-here).
+See [docs/architecture.md](docs/architecture.md) for what is wired to what,
+[docs/adr/](docs/adr/) for the decisions and the trade-offs each accepted, and
+[docs/PLAN.md](docs/PLAN.md) for the running log.
 
 ## Endpoints
 
@@ -245,12 +246,32 @@ which resolves through a string token the scanner cannot follow.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md) — component map, what is built and
-  what is not, known gaps
-- [docs/PLAN.md](docs/PLAN.md) — decisions, architecture, milestones
-- [docs/back-of-envelope.md](docs/back-of-envelope.md) — capacity estimate behind
-  the Kafka partitioning trade-off
-- [docs/testing-conventions.md](docs/testing-conventions.md) — the when/should
-  naming pattern, what is tested at which layer, and how load-bearing tests are
-  proven non-vacuous
-- `docs/adr/` — architecture decision records (M4)
+Roughly in the order a newcomer needs them.
+
+| | |
+|---|---|
+| [CONTEXT.md](CONTEXT.md) | What the words mean — tenant, conversation, change event, read model — and the two rules that explain most of the code |
+| [docs/architecture.md](docs/architecture.md) | Component map: what is built, what is not, and the known gaps |
+| [docs/adr/](docs/adr/) | Seven decision records, each with the trade-off it accepted |
+| [docs/PLAN.md](docs/PLAN.md) | The running log — every decision D1–D38, the milestones, what was verified on a running stack |
+| [docs/back-of-envelope.md](docs/back-of-envelope.md) | The capacity estimate behind the Kafka partitioning trade-off |
+| [docs/testing-conventions.md](docs/testing-conventions.md) | The when/should naming pattern, what is tested at which layer, and how load-bearing tests are proven non-vacuous |
+
+If you read only one after this file, read [CONTEXT.md](CONTEXT.md). If you read
+only one decision record, read
+[ADR-002](docs/adr/002-cdc-not-outbox.md) — change data capture instead of a
+transactional outbox is the choice the rest of the system hangs off.
+
+## What is deliberately not here
+
+Stated because their absence is a decision, not an oversight.
+
+- **No endpoint lists conversations.** They can be created and posted into, not
+  enumerated — which is why there is no `lastMessageAt` on the model: it would have
+  been maintained for no reader.
+- **No tenant provisioning.** A tenant exists because a verified token says so. Per-tenant
+  Elasticsearch aliases are consequently created on first write, which is the wrong
+  place for them; [PLAN.md §10](docs/PLAN.md) records why and what it would take to move them.
+- **Redis caches nothing.** It is configured, health-checked and proven reachable,
+  and no use case reads through it. Caching is optional in the brief.
+- **No `lastMessageAt`, no unread counts, no read receipts, no attachments.**

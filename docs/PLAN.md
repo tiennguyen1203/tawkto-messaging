@@ -65,7 +65,7 @@ We add `tenantId` (required for multi-tenancy).
 | D27 | **Input shape is validated by the DTO; use cases validate only what needs loaded state** | Content being non-blank and within the length bound is a property of the request, so `CreateMessageDtos.RequestDto` owns it: the failure becomes a 400 naming the offending field, the bound shows up in Swagger, and there is one place to change it. Duplicating the same two checks inside the use case bought nothing — every caller arrives through the controller. `@Trim()` runs before `@MinLength(1)`, which closes the gap where `"   "` satisfied a three-character minimum. What stays in the use case is what a DTO cannot see: whether the conversation exists in this tenant (404) and whether the sender is a participant (403). The trade-off accepted here: the use case now trusts its input, so a future non-HTTP caller would need its own validation |
 | D26 | **Build with `tsc` directly, not `nest build`** | @nestjs/cli resolves its own bundled TypeScript regardless of what the project declares, so the declared compiler was never the one building the app. On this configuration `nest build` also exits 0 while emitting nothing — a silent failure far worse than an error. Compiling with `tsc -p tsconfig.build.json` makes the declared compiler the real one; nothing is lost, since this project uses no Nest CLI compiler plugins and has no assets to copy. The switch also exposed a pre-existing bug: `tsc` leaves the `@/*` path aliases verbatim in the emitted JavaScript, so `node dist/main` — which is what `start:prod` and the Dockerfile's CMD both run — could not resolve them and crashed on boot. `nest start` had been hiding it by registering tsconfig-paths at run time. `tsc-alias` now rewrites the aliases to relative paths after compilation |
 | D24 | **MongoDB on host port 27018, Redis on 6380** | The standard ports are commonly already taken by other projects on a developer machine; overridable via `MONGO_HOST_PORT` / `REDIS_HOST_PORT` |
-| D22 | **Bulk-index into ES and coalesce `lastMessageAt` per batch** — mandatory, not an optimization | Same estimate: a naive per-document consumer tops out at ~220 msg/s (~13,000 concurrent senders), which *is* within reach of a real live-event chat. Bulk raises it ~30× to ~6,700 msg/s and moves the bottleneck off the consumer onto Kafka. This is what makes D21's acceptance defensible — without it, accepting the risk would not be |
+| D22 | **Bulk-index into ES** — mandatory, not an optimization. ~~And coalesce `lastMessageAt` per batch~~ — **not built** | Same estimate: a naive per-document consumer tops out at ~220 msg/s (~13,000 concurrent senders), which *is* within reach of a real live-event chat. Bulk raises it ~30× to ~6,700 msg/s and moves the bottleneck off the consumer onto Kafka. This is what makes D21's acceptance defensible — without it, accepting the risk would not be. The `lastMessageAt` half was dropped in M3.4 rather than built: nothing reads the field. There is no endpoint that lists conversations, so writing it would have added a MongoDB write per batch to maintain data no caller can observe. Dropping it does not weaken the estimate — it removes work from the consumer, so the ceiling above is if anything conservative. What it does mean is that the coalescing pattern the capacity analysis describes is analysis, not code; see §10 |
 | D13 | **ES coupling to the Mongo schema is acceptable** | ES is a read model **inside the same bounded context** (CQRS). The boundary: once a consumer outside this context subscribes, we must publish a second, curated topic |
 | D14 | **One shared ES index + a filtered alias per tenant** | The application only ever knows `messages-{tenantId}`. Switching to index-per-tenant becomes a pure ops migration, zero code change |
 | D15 | **Cursor pagination on both read endpoints** | Mongo keyset · ES `search_after`. Avoids the `from + size ≤ 10000` ceiling |
@@ -496,15 +496,30 @@ nothing indexed has no alias, and `ignore_unavailable` turns that into an empty 
 Creating the alias on a read would mean a search quietly writes to the cluster, and
 any stranger's tenant id would leave a permanent artefact behind.
 
-#### M3.4 — `lastMessageAt`
+#### M3.4 — `lastMessageAt` — **dropped, not deferred by accident**
 
-- Coalesced to one conditional update per conversation per batch, not one per
-  message (D22)
-- The update is conditional on the new timestamp being later, so out-of-order
-  redelivery cannot move a conversation backwards
+The plan was one conditional update per conversation per batch, guarded on the new
+timestamp being later so that out-of-order redelivery could not move a conversation
+backwards.
 
-**Done when:** a batch spanning several conversations issues one update each, and
-replaying it changes nothing
+It was dropped when the work came up, because **nothing reads the field**. There is
+no endpoint that lists conversations — the API creates them, posts messages into
+them, and reads messages back — so `lastMessageAt` would have been maintained for no
+caller. The unused `lastMessageAt` property has been removed from the model along
+with it; a schema that advertises a field nothing ever sets is worse than one that
+does not mention it.
+
+Two things would make it worth building, and either is a fine follow-up:
+
+- **A conversation list.** `GET /api/v1/conversations` ordered by recent activity is
+  the obvious next endpoint for a messaging product, and it is what gives the field a
+  reader. The keyset machinery and the compound-index discipline are already here.
+- **An unread count or activity feed**, which needs the same write.
+
+Recorded here rather than left silently undone, because D22 and
+[back-of-envelope.md](./back-of-envelope.md) both describe the coalescing pattern.
+That analysis stands — it is why the consumer is batch-shaped — but the
+`lastMessageAt` write it describes is analysis, not code.
 
 ### M4 — Documentation
 

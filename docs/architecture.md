@@ -39,7 +39,6 @@ flowchart TD
     dbz -->|publish| kafka
     kafka -->|one partition per conversation| consumer
     consumer -->|index and delete, in event order| es
-    consumer -.->|lastMessageAt| mongo
     ctl --> searchuc
     searchuc -->|match and search_after| es
 
@@ -65,7 +64,7 @@ deletion removes it. Posting a message makes it searchable in about two seconds,
 editing it replaces the indexed copy, and deleting it removes it — all verified on
 compose, as is searching it: a term posted through the API is findable within a
 couple of seconds, scoped to one conversation and one tenant. The single dashed
-arrow left is `lastMessageAt`, which nothing writes back yet.
+every arrow now carries traffic.
 
 ## Where each phase left off
 
@@ -78,8 +77,8 @@ arrow left is `lastMessageAt`, which nothing writes back yet.
 | M3.1 | Bulk writes into the index, behind per-tenant aliases | done |
 | M3.2 | The consumer process that fills the index from the Kafka topic | done |
 | M3.3 | `search_after` queries and the search endpoint | done |
-| M3.4 | `lastMessageAt` on the conversation | not started |
-| M4 | README for a cold reader, ADRs, domain glossary | not started |
+| M3.4 | `lastMessageAt` on the conversation | dropped — nothing reads it, see [PLAN.md](./PLAN.md) |
+| M4 | README for a cold reader, seven ADRs, domain glossary | done |
 
 M3 is split so each part can be reviewed on its own: the schema alone first, then
 one thin slice at a time, each ending with something demonstrable. The reasoning
@@ -97,6 +96,12 @@ lifecycle in this codebase yet, so every tenant-shaped resource is created lazil
 Moving it collapses `ensureAlias` into a pure string and removes the cache
 entirely. The failure mode that makes this worth moving, and the cheaper fix that
 neutralises it either way, are in [PLAN.md §10](./PLAN.md#10-deferred--tenant-provisioning).
+
+**No endpoint lists conversations.** They can be created and posted into, but not
+enumerated — which is also why `lastMessageAt` was dropped rather than built: it
+would have been maintained for no reader. `GET /api/v1/conversations` ordered by
+recent activity is the natural next endpoint, and the one that would give it a
+purpose.
 
 **Redis caches nothing.** It is configured, health-checked and proven reachable,
 but no use case caches anything through it. Caching is optional in the brief.

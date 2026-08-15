@@ -18,6 +18,6 @@ export class ConversationModel extends TenantScopedModel {
    * Maintained by the CDC consumer in M3 rather than on the write path, so
    * posting a message stays a single insert.
    */
-  @prop({ type: () => Date })
-  lastMessageAt?: Date;
+  // @prop({ type: () => Date })
+  // lastMessageAt?: Date;
 }
