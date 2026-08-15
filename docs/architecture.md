@@ -83,29 +83,15 @@ compose, as is searching it: a term posted through the API is findable within a
 couple of seconds, scoped to one conversation and one tenant. The single dashed
 every arrow now carries traffic.
 
-## Where each phase left off
+## What state each component is in
 
-| Phase | What it covers | Status |
-|---|---|---|
-| M0 | Template ported to MongoDB: tenant-scoped repositories, stateless JWT, CLS, logging, health check, three-mode test harness | done |
-| M1 | Conversations and messages — cursor pagination, index migrations, authorisation, three endpoints | done |
-| M2 | Kafka in KRaft mode, Debezium connector, the SMT chain, topic keyed by conversation | done |
-| M3 | The Elasticsearch index schema — mapping, `dynamic: strict`, the apply step | done |
-| M3.1 | Bulk writes into the index, behind per-tenant aliases | done |
-| M3.2 | The consumer process that fills the index from the Kafka topic | done |
-| M3.3 | `search_after` queries and the search endpoint | done |
-| M3.4 | `lastMessageAt` on the conversation | dropped — nothing reads it, see [PLAN.md](./PLAN.md) |
-| M4 | README for a cold reader, seven ADRs, domain glossary | done |
-| — | Contexts split into `shared/` + `messaging/`, boundary enforced by lint | done |
-| I1 | Identity: tenants, users, token issuance, its own process | done |
-| I2 | `tenant-created` event — Identity publishes, Messaging provisions the alias | done |
-| I3 | The user-picker demo UI | not started |
+The colours in the diagram above are the answer: green does work in the running
+system, amber exists and is proven but nothing calls it, red is not built.
 
-M3 is split so each part can be reviewed on its own: the schema alone first, then
-one thin slice at a time, each ending with something demonstrable. The reasoning
-is in [PLAN.md](./PLAN.md#search--m3-through-m34).
-
-Nothing is amber: every component drawn above does work in the running system.
+**Milestone status is not here** — it is in [PROGRESS.md](../PROGRESS.md), which is
+the only file that claims what is done and names the check that settled it. A table
+of phases in a document about components was a second place for that to drift, and
+it drifted.
 
 ## Known gaps
 

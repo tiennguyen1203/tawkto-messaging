@@ -2,15 +2,14 @@
 
 RESTful message management built with NestJS, MongoDB, Kafka and Elasticsearch.
 
-**Status: the three endpoints in the brief are built, verified on a running stack,
-and documented.** Conversations and messages can be created and listed with cursor
-pagination, scoped to a tenant by the repository rather than by its callers. Every
-change reaches Kafka through Debezium without the application dual-writing, and the
-consumer applies whole batches behind a filtered alias per tenant: a message posted
-through the API is searchable about two seconds later, editing it replaces the indexed
-copy, and deleting it removes it.
+A message is written once, to MongoDB. Debezium carries the change to Kafka, a
+consumer projects it into Elasticsearch, and search reads it back — scoped to a
+tenant by the repository rather than by its callers, at every step.
 
-What is deliberately absent is listed [below](#what-is-deliberately-not-here).
+**Where this has got to, and what proved each step, is in
+[PROGRESS.md](PROGRESS.md)** — one file claims status, so there is one file to
+correct when it changes. What is deliberately absent is listed
+[below](#what-is-deliberately-not-here).
 See [docs/architecture.md](docs/architecture.md) for what is wired to what,
 [docs/adr/](docs/adr/) for the decisions and the trade-offs each accepted, and
 [docs/PLAN.md](docs/PLAN.md) for the running log.
@@ -299,6 +298,7 @@ Roughly in the order a newcomer needs them.
 
 | | |
 |---|---|
+| [PROGRESS.md](PROGRESS.md) | What is done, what is next, and the check that settled each one |
 | [CONTEXT-MAP.md](CONTEXT-MAP.md) | The two bounded contexts, how they relate, and a glossary for each |
 | [docs/architecture.md](docs/architecture.md) | Component map: what is built, what is not, and the known gaps |
 | [docs/adr/](docs/adr/) | Seven decision records, each with the trade-off it accepted |

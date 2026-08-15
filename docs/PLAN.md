@@ -211,6 +211,10 @@ src/
 
 ---
 
+The demo UI lives outside this tree, in `ui/` at the repository root, with its own
+`package.json` — a different toolchain and a different dependency graph, and not a
+bounded context. See I3.
+
 ## 5. Deletion manifest
 
 **Aentry domain:** 23 entities · 27 repositories · `cores/migrations/` (40 files) ·
@@ -241,6 +245,10 @@ CLS `traceId`)
 ---
 
 ## 6. Milestones
+
+Each entry says what a part *is* and when it would be finished. Whether it happened
+is in [PROGRESS.md](../PROGRESS.md) — one file claims status, so there is one file
+to correct when it changes.
 
 Each milestone is a commit that runs. **M1 is the safety line** — there is something
 submittable even if Kafka or ES goes sideways.
@@ -538,6 +546,106 @@ That analysis stands — it is why the consumer is batch-shaped — but the
 - The six ADRs in section 7
 
 **Done when:** someone unfamiliar can clone the repo and run it from the README alone
+
+---
+
+### Identity and the demo UI — I1 through I5
+
+Neither is in the brief. They exist because `tenantId` was appearing out of a
+hand-signed token with nothing behind it, and because a reviewer cannot exercise a
+multi-tenant API without a way to become somebody. Identity is a second bounded
+context (ADR-007); the UI is a client of it, and not a context at all.
+
+The split follows the same rule M3 did: **each part ends with something
+demonstrable, and nothing is built before the thing that consumes it.** Which of
+them have happened is in [PROGRESS.md](../PROGRESS.md).
+
+#### I1 — The identity context
+
+Tenant and User, their repositories, the `for-demo` endpoints, token issuance, its
+own process and compose service.
+
+**Verified on a running stack:** a tenant created through identity, a user created
+in it, a token issued for that user, and that token accepted by messaging — a
+conversation created, a message posted, and the message searchable about two
+seconds later. Separately, a container started with `APP_ENV=prod` answered 200 on
+health and **403 on every seeding route**.
+
+#### I2 — Tenant provisioning by event
+
+Creating a tenant publishes `identity.tenant-created.v1`; messaging consumes it in
+its own group and provisions the tenant's search alias.
+
+**Verified:** the alias appeared about two seconds after the tenant was created,
+with the right tenant filter, and **with no message ever sent**. See D47 for why
+this is the system's only dual write and why that is tolerable, and §10 for the
+`auto_create_index` restriction that made it safe.
+
+#### I3 — The UI shell — *core first, no features*
+
+Vue 3 with TypeScript, built by Vite, in a **`ui/` directory at the repository root
+with its own `package.json`**. Not under `src/`: that is one TypeScript program with
+`rootDir: src`, and a `.vue` file in it breaks the server build. A separate manifest
+also keeps Vue out of the API image's dependency graph.
+
+What this part is:
+
+- The Vite + Vue + TS scaffold, strict `tsconfig`, `<script setup>`, and lint and
+  format settings that match the server's
+- **A typed API client** — the one piece worth getting right before any page exists.
+  Every response from both services is wrapped as
+  `{ statusCode, message, data, timeStamp }`, so the client unwraps `data` in one
+  place rather than in every caller, and turns a non-2xx into a typed error rather
+  than a rejected promise nobody catches
+- An app shell — header, content slot, and the loading and error conventions every
+  later page will use
+- Exactly one route, wired end to end, showing identity's health
+
+How it is served, which is two answers rather than one:
+
+- **In development**, Vite serves it and proxies `/api` to identity. Same origin, so
+  no CORS, and a proxy is a config line where CORS is a header policy on a server
+- **In the image**, `ui/dist` is served by identity through `@nestjs/serve-static`,
+  so the demo is one URL and one process. Costs a UI build stage in the Dockerfile
+
+**Done when:** `pnpm ui:dev` renders the shell against a running identity, and
+`pnpm ui:build` produces assets identity serves at `/`.
+
+#### I4 — The picker
+
+The point of the whole exercise: choose who you are, get a token, and carry it.
+
+- `GET /for-demo/tenants` — **missing today**, and the picker needs it: you cannot
+  list a tenant's users without first choosing a tenant
+- Pick a tenant, see its users, pick one, receive a token
+- The token is held in memory and shown for copying. Not in `localStorage`: this is a
+  demo tool that hands out credentials for any user by name, and a token that
+  survives a page reload is a token that outlives the demonstration
+- Creating a tenant and a user from the UI, so a reviewer never has to reach for curl
+
+**Done when:** a reviewer with an empty database can open one page, create a tenant
+and a user, and end up holding a token that messaging accepts.
+
+#### I5 — The messaging pane — *optional, and the first thing that needs CORS*
+
+Post a message, list a conversation, search it — all with the token I4 handed out,
+so the demo shows the whole system rather than half of it.
+
+This is where **CORS on messaging** arrives, and not before: the UI is served from
+identity's origin, so the first cross-origin call is the first call to messaging.
+§10b explains why this is CORS and not a gateway.
+
+**Done when:** posting a message in the UI and finding it through the search box,
+without touching a terminal.
+
+#### Not planned
+
+**No tests on components.** The API client gets them — envelope unwrapping and error
+mapping are logic, and both are easy to get subtly wrong. Rendering is not, at this
+size, and a demo UI with a component test suite is a demo UI nobody will change.
+
+**No state management library, no component framework.** Three pages holding one
+token between them is not a state management problem.
 
 ---
 
