@@ -103,6 +103,47 @@ MongoDB binds to host port **27018** and Redis to **6380** by default, so this s
 does not collide with other projects already using the standard ports. Override with
 `MONGO_HOST_PORT` / `REDIS_HOST_PORT`.
 
+### The demo UI
+
+A Vue 3 client in [ui/](ui/), for driving the demo by hand. Today it is a shell —
+a typed API client, an app frame and a health panel. The tenant/user picker and the
+messaging pane are [I4 and I5](PROGRESS.md).
+
+```bash
+pnpm ui:install
+pnpm ui:dev                  # http://localhost:5173, proxying to both APIs
+```
+
+Vite proxies `/identity-api` to 3001 and `/api` to 3000, so the browser makes
+same-origin calls and neither service needs a CORS policy yet (PLAN §10b).
+
+In a container it is its own service — nginx, serving the built assets and
+proxying the same two prefixes:
+
+```bash
+docker compose --profile app up -d --build demo-ui   # http://localhost:8088
+```
+
+It builds from [ui/Dockerfile](ui/Dockerfile), with `ui/` as its whole build context
+— the client shares no stage with the server's image. `pnpm ui:build` is for working
+locally, not a prerequisite. Port **8088** rather than 8080, which is contested enough that a page
+from another project answering instead is a real possibility.
+
+Identity served the UI first, and that was wrong in a way worth recording: the client
+asks for `/identity-api/...`, identity has no such prefix and nothing to strip one
+with, so the page loaded and every call it made came back as `index.html` under a
+200. Serving static files and proxying an API are one job, and nginx does both.
+
+`ui/` is a separate package on purpose: it is outside the pnpm workspace, has its
+own lockfile and tsconfig, and is excluded from the server's TypeScript projects.
+A Vue toolchain and a NestJS one disagree about `module`, `lib` and `types`, and
+sharing one config makes both worse.
+
+The proxy is deliberately the only thing in front of the APIs. It is not a gateway:
+no authentication, no rate limiting, no request shaping — it routes two prefixes so
+the browser stays on one origin. See PLAN §10b for when a real one would earn its
+keep.
+
 ### Why a replica set for a single node
 
 Change streams — the source Debezium tails — are unavailable on a standalone
@@ -291,6 +332,10 @@ which resolves through a string token the scanner cannot follow.
 | `pnpm test` | Unit and integration tests |
 | `pnpm typecheck` | Typecheck the app and the scripts |
 | `pnpm lint` | ESLint with `--fix` |
+| `pnpm ui:install` | Install the demo UI, which has its own lockfile |
+| `pnpm ui:dev` | Vite dev server for the demo UI, proxying to both APIs |
+| `pnpm ui:build` | Build the demo UI into `ui/dist`, where identity serves it |
+| `pnpm ui:test` | The demo UI's own tests |
 
 ## Documentation
 

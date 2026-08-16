@@ -255,6 +255,45 @@ services:
       - app
     restart: unless-stopped
 
+  # The demo client. Static files and two proxy prefixes, no Node — which is why it
+  # is nginx rather than a fourth process out of the application image.
+  #
+  # It proxies instead of the browser calling 3000 and 3001 directly, so everything
+  # the page does is same-origin and neither API needs a CORS policy (PLAN §10b).
+  # That makes this the smallest thing that could be called a gateway, and it is
+  # worth being clear that it is not one: no authentication, no rate limiting, no
+  # request shaping. It routes two prefixes for a demo.
+  demo-ui:
+    build:
+      # Its own context and its own Dockerfile — the client shares nothing with the
+      # server's image but the machine it is built on.
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      # 8088, not 8080: the default is the single most contested port on a
+      # developer's machine, and a service that silently answers from someone
+      # else's project is worse than one that fails to start. Mongo and Redis are
+      # moved off their defaults here for the same reason.
+      - '${DEMO_UI_PORT:-8088}:80'
+    depends_on:
+      # Started, not healthy: nginx only needs the names to resolve, and waiting on
+      # health would make the page unavailable while an API is still booting —
+      # which is exactly when someone wants to look at it.
+      - identity-api
+      - messaging-api
+    healthcheck:
+      # 127.0.0.1, not localhost: inside the container that name resolves to ::1
+      # first, and `listen 80` binds IPv4 only — so the check is refused while
+      # nginx is serving every real request perfectly well.
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1/']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    profiles:
+      - app
+    restart: unless-stopped
+
 volumes:
   mongo_data:
   redis_data:

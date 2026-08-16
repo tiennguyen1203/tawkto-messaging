@@ -588,6 +588,14 @@ with its own `package.json`**. Not under `src/`: that is one TypeScript program 
 `rootDir: src`, and a `.vue` file in it breaks the server build. A separate manifest
 also keeps Vue out of the API image's dependency graph.
 
+Separate has to mean *self-contained*, and it is easy to believe it is when it is
+not. `ui/` sits inside the repository, so a missing dependency resolves upwards into
+the server's `node_modules` and every check passes on a developer's machine — then
+fails in the Docker stage, where `ui/` is built alone. It therefore carries its own
+`pnpm-workspace.yaml` (or `pnpm install` walks up and installs nothing), its own
+lockfile, and every type package it uses, including `@types/node`. The server's
+`tsconfig`s exclude it in both directions.
+
 What this part is:
 
 - The Vite + Vue + TS scaffold, strict `tsconfig`, `<script setup>`, and lint and
@@ -603,13 +611,25 @@ What this part is:
 
 How it is served, which is two answers rather than one:
 
-- **In development**, Vite serves it and proxies `/api` to identity. Same origin, so
-  no CORS, and a proxy is a config line where CORS is a header policy on a server
-- **In the image**, `ui/dist` is served by identity through `@nestjs/serve-static`,
-  so the demo is one URL and one process. Costs a UI build stage in the Dockerfile
+- **In development**, Vite serves it and proxies `/identity-api` to identity and
+  `/api` to messaging — two prefixes because both services mount their routes under
+  `/api` and the browser has to be able to tell them apart. Same origin either way,
+  so no CORS, and a proxy is a config line where CORS is a header policy on a server
+- **In the image**, it is its own container: nginx serving the built client and proxying
+  the same two prefixes, on port 8088. Identity served it first and that failed in a
+  way worth keeping written down — the client asks for `/identity-api/...`, identity
+  has no such prefix and no way to strip one, so the page loaded, every API call came
+  back as `index.html` with a 200 on it, and a check that only looked at `/` and the
+  asset bundle called it done. Serving static files and rewriting a prefix are the
+  same job, and a static server does both. It has its own `ui/Dockerfile` and its own
+  build context rather than a stage in the server's: the two images share no base, no
+  dependency tree and no stage, and interleaving them means every failure is traced
+  through stages belonging to the other project. Costs a fourth container
 
-**Done when:** `pnpm ui:dev` renders the shell against a running identity, and
-`pnpm ui:build` produces assets identity serves at `/`.
+**Done when:** `pnpm ui:dev` renders the shell against a running identity, and the
+`demo-ui` container serves the built client with its API calls answering as **JSON**
+through the proxy — the page rendering is not the check, since it renders fine while
+every call it makes fails.
 
 #### I4 — The picker
 

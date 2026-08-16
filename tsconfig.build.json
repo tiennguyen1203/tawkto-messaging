@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "// note": "`exclude` replaces the base list rather than extending it, so scripts/ has to be repeated here — it lives outside rootDir and would fail TS6059.",
+  "// note": "`exclude` replaces the base list rather than extending it, so scripts/ and ui/ have to be repeated here — it lives outside rootDir and would fail TS6059.",
   "compilerOptions": {
     // Lives inside dist so `rm -rf dist` takes it too. Left at the project root
     // it survives the prebuild wipe, and tsc then believes outputs it had
@@ -11,5 +11,5 @@
     // describes.
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "exclude": ["node_modules", "dist", "scripts", "**/*spec.ts"]
+  "exclude": ["node_modules", "dist", "scripts", "ui", "**/*spec.ts"]
 }

@@ -1,0 +1,57 @@
+/* Tokens and layout only. A page sets no colours of its own. */
+:root {
+  --bg: #0f1216;
+  --surface: #171b21;
+  --border: #262c35;
+  --text: #e6e9ee;
+  --muted: #98a2b3;
+  --accent: #6ea8fe;
+  --danger: #f2777a;
+  --radius: 8px;
+  --gap: 16px;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap);
+  padding: var(--gap) 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.app-header nav { display: flex; gap: 12px; }
+.app-header a { color: var(--muted); text-decoration: none; font-size: 14px; }
+.app-header a.router-link-active { color: var(--accent); }
+
+.app-main { padding: 24px; max-width: 880px; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--gap);
+}
+
+.muted { color: var(--muted); }
+.error { color: var(--danger); }
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.stack { display: grid; gap: var(--gap); }
+h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--muted); }

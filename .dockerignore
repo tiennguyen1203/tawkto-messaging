@@ -1,8 +1,17 @@
+# Patterns here are matched with Go's filepath.Match, where `*` stops at a `/`.
+# A bare `node_modules` therefore excludes only the one at the root, and every
+# nested one — ui/node_modules above all — is copied into the build context.
+# That is not merely wasteful: a pnpm modules directory records the store it was
+# installed from, so the host's arrives in the image pointing at a store that is
+# not there. pnpm then wants to purge it, asks for confirmation, finds no TTY,
+# and the build dies with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY. Every
+# pattern below that should apply at any depth is written `**/`.
+
 # Dependencies
-node_modules
+**/node_modules
 
 # Build output (we build in Docker)
-dist
+**/dist
 
 # Git
 .git
@@ -11,8 +20,8 @@ dist
 # IDE
 .idea
 .vscode
-*.swp
-*.swo
+**/*.swp
+**/*.swo
 
 # Environment files — supplied at run time by docker-compose
 .env
@@ -21,19 +30,16 @@ dist
 
 # Test files
 coverage
-*.spec.ts
-*.test.ts
+**/*.spec.ts
+**/*.test.ts
 jest.json
 tsconfig.spec.json
 
 # Documentation
 docs
-*.md
+**/*.md
 !README.md
 
 # Misc
-.DS_Store
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+**/.DS_Store
+**/*.log

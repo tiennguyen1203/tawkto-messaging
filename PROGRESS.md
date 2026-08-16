@@ -1,6 +1,6 @@
 # Progress
 
-**Where this is: I2 finished. I3 — the demo UI shell — is next.**
+**Where this is: I3 finished. I4 — the tenant and user picker — is next.**
 
 The one place that says what is done. [PLAN.md](docs/PLAN.md) says what each part is
 and why it is shaped that way; this says whether it happened and what proved it.
@@ -26,9 +26,19 @@ cluster each found something the suite could not.
 | — | Contexts split into `shared/` + `messaging/` + `identity/`, boundary enforced by lint | done | A deliberate cross-context import fails `pnpm lint` with a message naming the fix |
 | I1 | Identity — tenants, users, token issuance, its own process | done | A token issued by identity accepted by messaging end to end; `APP_ENV=prod` answered 403 on every seeding route |
 | I2 | `tenant-created` event — identity publishes, messaging provisions the alias | done | The alias appeared ~2s after the tenant, with the right filter, **with no message ever sent** |
-| **I3** | **The demo UI shell — Vue, Vite, a typed API client, no features** | **next** | — |
-| I4 | The picker — choose a tenant and a user, receive a token | not started | — |
+| I3 | The demo UI shell — Vue, Vite, a typed API client, no features | done | The `demo-ui` container answering **`Content-Type: application/json`** on both proxied APIs — the check a 200 alone had passed while the app was broken. `POST` through the proxy returned 201; `/api/*` proved to reach messaging, not identity, by a route only messaging has; identity now 404s at `/` |
+| **I4** | **The picker — choose a tenant and a user, receive a token** | **next** | — |
 | I5 | The messaging pane, and the CORS it needs | optional | — |
+
+### Why I3 was marked done once already, wrongly
+
+Identity served the built client first, and the check was "`/` returns 200 and the
+asset bundle loads". Both were true. The app was still broken: it asks for
+`/identity-api/...`, identity has no such prefix and nothing to strip one with, so
+every API call came back as `index.html` under a **200**. A status code was mistaken
+for an answer. The container that replaced it is nginx, which serves the assets and
+strips the prefix exactly as the dev server does — and the check is now the content
+type, not the status.
 
 ## Open, and deliberately so
 
@@ -36,7 +46,7 @@ cluster each found something the suite could not.
 |---|---|
 | No endpoint lists conversations | PLAN §6 (M3.4) — it is why `lastMessageAt` was dropped |
 | `GET /for-demo/tenants` does not exist yet; the picker needs it | PLAN §6 (I4) |
-| No API gateway — CORS when the UI needs it | PLAN §10b |
+| The `demo-ui` proxy is not a gateway — no auth, no rate limiting; it routes two prefixes so the browser stays same-origin | PLAN §10b |
 | The Debezium connector's collection name is a literal that must match `MESSAGES_COLLECTION` | architecture.md, Known gaps |
 | Provisioning scripts run from the host, not from the image | README, Getting started |
 

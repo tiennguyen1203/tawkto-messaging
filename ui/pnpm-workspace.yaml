@@ -1,0 +1,16 @@
+# Marks this directory as its own workspace root.
+#
+# Without it pnpm walks up, finds the repository's own pnpm-workspace.yaml, treats
+# that as the root, and — since `ui` is not one of its packages — reports "already
+# up to date" while installing nothing at all. The failure is silent: no lockfile,
+# no node_modules, and a build that only fails later.
+#
+# Keeping the two separate is the point: the API image installs from the root
+# manifest and must never pull Vue or Vite.
+packages:
+  - .
+
+# esbuild compiles a native binary on install; Vite cannot bundle without it. The
+# repository root answers the same question for its own dependencies.
+allowBuilds:
+  esbuild: true

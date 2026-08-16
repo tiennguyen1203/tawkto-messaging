@@ -7,10 +7,16 @@ coverage
 *.tsbuildinfo
 
 # Emitted artefacts must only ever live in dist/. A misconfigured project once
-# dropped .d.ts files next to the scripts they were generated from.
+# dropped .d.ts files next to the scripts they were generated from, and `vue-tsc
+# --build` later did the same to ui/ — the emitted vite.config.js then shadowed
+# the .ts one and broke the build. Both projects are checked here so the junk
+# cannot be committed even when a tool starts producing it again.
 /scripts/**/*.js
 /scripts/**/*.d.ts
 /scripts/**/*.map
+/ui/**/*.js
+/ui/**/*.d.ts
+/ui/**/*.map
 
 # Environment
 .env

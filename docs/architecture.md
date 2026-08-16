@@ -13,6 +13,8 @@ it can be corrected in the same commit as the thing it describes.
 flowchart TD
     client(["Client<br/>bearer token carries sub + tenantId"])
 
+    demoui["Demo UI — ui/, Vue + Vite on nginx<br/>static assets, plus /identity-api and /api<br/>proxied so the browser stays same-origin<br/>shell only: no picker yet"]
+
     subgraph identity["Identity — src/identity/main.ts"]
         direction TB
         idctl["for-demo controllers<br/>tenants · users · tokens"]
@@ -36,6 +38,9 @@ flowchart TD
     consumer["Messaging indexer — src/messaging/main.consumer.ts<br/>eachBatch → one ordered bulk request<br/>create · update · delete<br/>document id = message id, so replay overwrites"]
     es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>content analysed · metadata flattened")]
 
+    client -->|browser| demoui
+    demoui -->|/identity-api/* prefix stripped| idctl
+    demoui -->|/api/*| guard
     client -->|HTTPS| idctl
     idctl --> idrepo
     idctl --> idpub
@@ -66,6 +71,7 @@ flowchart TD
     class client plain
     class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es,searchuc done
     class idctl,idrepo,idpub done
+    class demoui wip
     class redis done
 ```
 
@@ -80,8 +86,18 @@ the order the events arrived: a create and an edit both write the document whole
 deletion removes it. Posting a message makes it searchable in about two seconds,
 editing it replaces the indexed copy, and deleting it removes it — all verified on
 compose, as is searching it: a term posted through the API is findable within a
-couple of seconds, scoped to one conversation and one tenant. The single dashed
-every arrow now carries traffic.
+couple of seconds, scoped to one conversation and one tenant. Nothing in the diagram
+is dashed any more: every arrow carries traffic.
+
+The one amber box is the demo UI: its container is verified — both proxied APIs
+answer JSON through it — but it drives nothing yet, being one health panel and the
+client that later pages will use.
+
+It sits outside both subgraphs deliberately. It is a browser client, not a part of
+either service: identity served it at first, and doing so meant the page could load
+while every call it made returned `index.html` under a 200, because identity has no
+`/identity-api` prefix to strip. The proxy is what makes the built client behave the
+way the dev server does.
 
 ## What state each component is in
 
