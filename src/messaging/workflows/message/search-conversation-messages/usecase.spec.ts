@@ -74,6 +74,7 @@ describe('@workflows/message/search-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: id,
+        requesterId: 'alice',
         text: 'pangolin',
         limit: 10,
       });
@@ -102,6 +103,7 @@ describe('@workflows/message/search-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: id,
+        requesterId: 'alice',
         text: 'aardvark',
         limit: 10,
       });
@@ -125,6 +127,7 @@ describe('@workflows/message/search-conversation-messages', () => {
 
       const { data } = await usecase.execute({
         conversationId: id,
+        requesterId: 'alice',
         text: 'pangolin',
         limit: 10,
       });
@@ -132,6 +135,27 @@ describe('@workflows/message/search-conversation-messages', () => {
       expect(data!.items.map((m) => m.content)).toEqual([
         'pangolin sighting, ours',
       ]);
+    });
+  });
+
+  describe('when the searcher is in the tenant but not in the conversation', () => {
+    it('should refuse, so the index is not a way around the check', async () => {
+      // Refusing the conversation and then answering the same question by keyword
+      // would be no protection at all. This was a real hole until a browser was
+      // pointed at it: both read paths checked the tenant and stopped there.
+      const conversation = await seedConversation();
+      const id = conversation._id.toString();
+      await seedMessages(id, ['pangolin sighting']);
+
+      const { data, error } = await usecase.execute({
+        conversationId: id,
+        requesterId: 'carol',
+        text: 'pangolin',
+        limit: 10,
+      });
+
+      expect(data).toBeNull();
+      expect(error?.type).toBe(UseCaseErrorType.PERMISSION_DENIED);
     });
   });
 
@@ -145,6 +169,7 @@ describe('@workflows/message/search-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: id,
+        requesterId: 'alice',
         text: 'pangolin',
         limit: 10,
       });
@@ -158,6 +183,7 @@ describe('@workflows/message/search-conversation-messages', () => {
     it('should answer not found', async () => {
       const { error } = await usecase.execute({
         conversationId: new Types.ObjectId().toString(),
+        requesterId: 'alice',
         text: 'pangolin',
         limit: 10,
       });
@@ -172,6 +198,7 @@ describe('@workflows/message/search-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: conversation._id.toString(),
+        requesterId: 'alice',
         text: 'pangolin',
         limit: 10,
       });

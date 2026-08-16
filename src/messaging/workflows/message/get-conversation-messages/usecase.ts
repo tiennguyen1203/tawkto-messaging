@@ -10,6 +10,7 @@ import { MessageRepository } from '@/messaging/cores/repositories/message.reposi
 import {
   BaseUseCase,
   NotFoundUseCaseError,
+  PermissionDeniedUseCaseError,
 } from '@/shared/use-case/base-use-case';
 import { GetConversationMessagesUseCaseTypes } from './types';
 
@@ -28,13 +29,31 @@ export class GetConversationMessagesUseCase extends BaseUseCase<
   async handle(
     input: GetConversationMessagesUseCaseTypes.Input,
   ): Promise<GetConversationMessagesUseCaseTypes.Output> {
-    const conversation = await this.conversationRepository.findByIdInTenant(
-      input.conversationId,
-    );
+    // The cached summary, the same one the write path uses: both questions asked
+    // here — does it exist in my tenant, and am I in it — are answered by it, and
+    // reading a conversation is at least as hot as writing to one.
+    const conversation =
+      await this.conversationRepository.findCachedSummaryInTenant(
+        input.conversationId,
+      );
 
     if (!conversation) {
+      // Another tenant's conversation must be indistinguishable from one that was
+      // never there. 403 here would confirm it exists.
       throw new NotFoundUseCaseError('Conversation not found.');
     }
+
+    if (!conversation.participantIds.includes(input.requesterId)) {
+      throw new PermissionDeniedUseCaseError(
+        'Reader is not a participant of this conversation.',
+      );
+    }
+
+    // Membership is checked on the way in, not on the way out. Filtering the rows
+    // instead would answer 200 with an empty page, which tells a non-participant
+    // that the conversation exists and is empty — and told the wrong story to
+    // anyone reading the code, since "no messages" and "not yours" would look the
+    // same.
 
     const cursor = decodeCursor<TimeCursor>(input.cursor);
 

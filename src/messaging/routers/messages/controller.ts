@@ -64,9 +64,12 @@ export class MessagesController {
   async getConversationMessages(
     @Param('conversationId') conversationId: string,
     @Query() query: ListMessagesDtos.QueryDto,
+    @GetAuthUser() user: AuthUserType,
   ): Promise<ListMessagesDtos.ResponseDto> {
     return this.getConversationMessagesUseCase.executeOrThrowHttpError({
       conversationId,
+      // Who is asking, from the token — the same claim the write path trusts.
+      requesterId: user.id,
       limit: query.limit ?? DEFAULT_PAGE_LIMIT,
       cursor: query.cursor,
     });
@@ -79,9 +82,11 @@ export class MessagesController {
   async searchConversationMessages(
     @Param('conversationId') conversationId: string,
     @Query() query: SearchMessagesDtos.QueryDto,
+    @GetAuthUser() user: AuthUserType,
   ): Promise<SearchMessagesDtos.ResponseDto> {
     return this.searchConversationMessagesUseCase.executeOrThrowHttpError({
       conversationId,
+      requesterId: user.id,
       text: query.q,
       limit: query.limit ?? DEFAULT_PAGE_LIMIT,
       cursor: query.cursor,

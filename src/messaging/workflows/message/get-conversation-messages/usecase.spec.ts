@@ -52,7 +52,12 @@ describe('@workflows/message/get-conversation-messages', () => {
     let pages = 0;
 
     do {
-      const { data } = await usecase.execute({ conversationId, limit, cursor });
+      const { data } = await usecase.execute({
+        conversationId,
+        requesterId: 'alice',
+        limit,
+        cursor,
+      });
       seen.push(...data!.items.map((m) => m.content));
       cursor = data!.nextCursor ?? undefined;
       pages += 1;
@@ -68,6 +73,7 @@ describe('@workflows/message/get-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: conversation._id.toString(),
+        requesterId: 'alice',
         limit: 10,
       });
 
@@ -85,6 +91,7 @@ describe('@workflows/message/get-conversation-messages', () => {
 
       const { data } = await usecase.execute({
         conversationId: conversation._id.toString(),
+        requesterId: 'alice',
         limit: 4,
       });
 
@@ -148,10 +155,47 @@ describe('@workflows/message/get-conversation-messages', () => {
 
       const { data } = await usecase.execute({
         conversationId: conversation._id.toString(),
+        requesterId: 'alice',
         limit: 50,
       });
 
       expect(data!.items).toHaveLength(2);
+    });
+  });
+
+  describe('when the reader is in the tenant but not in the conversation', () => {
+    it('should refuse, rather than serving somebody else conversation', async () => {
+      // This was a real hole, found by pointing a browser at it: the read path
+      // checked the tenant and stopped there, so anyone holding any token for the
+      // tenant could read every conversation in it by id. The write path had
+      // always checked membership; the two now agree.
+      const conversation = await seedConversation();
+      await seedMessages(conversation._id, 1);
+
+      const { data, error } = await usecase.execute({
+        conversationId: conversation._id.toString(),
+        requesterId: 'carol',
+        limit: 10,
+      });
+
+      expect(data).toBeNull();
+      expect(error?.type).toBe(UseCaseErrorType.PERMISSION_DENIED);
+    });
+
+    it('should refuse rather than answer an empty page', async () => {
+      // An empty page would be the tempting fix — filter the rows and return
+      // nothing. It says "this conversation exists in your tenant and has no
+      // messages", which is both a leak and a lie.
+      const conversation = await seedConversation();
+
+      const { data, error } = await usecase.execute({
+        conversationId: conversation._id.toString(),
+        requesterId: 'carol',
+        limit: 10,
+      });
+
+      expect(data).toBeNull();
+      expect(error?.type).toBe(UseCaseErrorType.PERMISSION_DENIED);
     });
   });
 
@@ -161,6 +205,7 @@ describe('@workflows/message/get-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: theirs._id.toString(),
+        requesterId: 'alice',
         limit: 10,
       });
 
@@ -175,6 +220,7 @@ describe('@workflows/message/get-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: conversation._id.toString(),
+        requesterId: 'alice',
         limit: 10,
       });
 
@@ -191,6 +237,7 @@ describe('@workflows/message/get-conversation-messages', () => {
 
       const { data, error } = await usecase.execute({
         conversationId: conversation._id.toString(),
+        requesterId: 'alice',
         limit: 10,
         cursor: 'not-a-real-cursor',
       });

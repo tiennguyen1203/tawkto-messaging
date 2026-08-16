@@ -3,6 +3,8 @@ import { PageResult } from '@/shared/pagination/cursor';
 export namespace GetConversationMessagesUseCaseTypes {
   export type Input = {
     conversationId: string;
+    /** The caller, from the token. Reading needs the same membership as writing. */
+    requesterId: string;
     limit: number;
     cursor?: string;
   };

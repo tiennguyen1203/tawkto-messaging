@@ -5,6 +5,7 @@ import { MessageRepository } from '@/messaging/cores/repositories/message.reposi
 import {
   BaseUseCase,
   NotFoundUseCaseError,
+  PermissionDeniedUseCaseError,
 } from '@/shared/use-case/base-use-case';
 import { SearchConversationMessagesUseCaseTypes } from './types';
 
@@ -37,6 +38,17 @@ export class SearchConversationMessagesUseCase extends BaseUseCase<
     if (!conversation) {
       throw new NotFoundUseCaseError('Conversation not found.');
     }
+
+    if (!conversation.participantIds.includes(input.requesterId)) {
+      throw new PermissionDeniedUseCaseError(
+        'Reader is not a participant of this conversation.',
+      );
+    }
+
+    // Search is a read of the same conversation and answers to the same rule.
+    // Leaving it out would have made the index a way around the check: the
+    // conversation refuses you, and then you ask Elasticsearch for its contents by
+    // keyword instead.
 
     // No tenant is passed. The repository inherits it from the request the same
     // way every other query does — this use case has no business knowing which
