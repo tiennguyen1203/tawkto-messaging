@@ -101,8 +101,11 @@ const FUZZY_MAX_EXPANSIONS = 50;
  *
  * Nothing outside this class names the concrete index: callers hand it writes and
  * it resolves each tenant's alias itself. That is what keeps the shared-index
- * layout (ADR-003) a private detail — splitting it into an index per tenant later
- * changes this file and nothing else.
+ * layout (ADR-003) a private detail: callers name `messageAliasFor(tenantId)` and
+ * cannot tell whether it resolves to a filtered alias over the shared index or a
+ * plain one over a dedicated index. Splitting a tenant out therefore changes this
+ * file, the template pattern, the reindex script and the test harness — not the
+ * consumer, the use cases or the repositories. See ADR-008.
  */
 @Injectable()
 export class MessageSearchIndex {

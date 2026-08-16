@@ -7,7 +7,7 @@ import type { Tenant, User } from '@/api/identity';
  *
  * Module-level state rather than Pinia: there is one of these, it holds three
  * values, and a store library would be a dependency to explain rather than a
- * problem solved. It is shared by import, so the picker sets it and the messaging
+ * problem solved. It is shared by import, so the switcher sets it and the messaging
  * pane reads it without either knowing about the other.
  *
  * **In memory only, deliberately.** Nothing here is written to `localStorage` or a

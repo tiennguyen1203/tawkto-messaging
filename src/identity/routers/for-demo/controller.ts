@@ -72,7 +72,7 @@ export class ForDemoController {
   @ApiOperation({
     operationId: 'listTenants',
     description:
-      'Every tenant there is. The picker needs one before it can ask for users, ' +
+      'Every tenant there is. The demo UI needs one before it can ask for users, ' +
       'and nothing else in the system enumerates tenants — see the use case for ' +
       'why that is deliberate.',
   })

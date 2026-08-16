@@ -9,7 +9,8 @@ import { Types } from 'mongoose';
  * previously.
  *
  * NOTE: indexes are NOT declared here or on any subclass. They live in `migrations/`
- * and are the single source of truth — see infra/database/database.configuration.ts.
+ * and are the single source of truth — `autoIndex` is off, set in
+ * src/shared/infra/database/database.configuration.ts.
  */
 @modelOptions({
   schemaOptions: {

@@ -5,7 +5,7 @@ import { BaseUseCase } from '@/shared/use-case/base-use-case';
 import { ListUsersUseCaseTypes } from './types';
 
 /**
- * Everyone in a tenant, for the user picker the demo UI will offer.
+ * Everyone in a tenant, for the identity switcher in the demo UI.
  *
  * Unpaginated on purpose: this exists to fill a dropdown in a local
  * demonstration, and the repository caps what it returns. A real directory would

@@ -222,7 +222,7 @@ fails the suite rather than surviving to production.
 
 ## 6. Testing utilities
 
-Three modes, chosen automatically by [TestHelper](src/shared/test/test-helper.ts):
+Three harnesses behind two entry points, chosen by what you pass to [TestHelper](src/shared/test/test-helper.ts):
 
 ```ts
 // Use case or repository — scans the dependency tree, exposes only what is needed
@@ -273,7 +273,7 @@ Roughly in the order a newcomer needs them.
 | [PROGRESS.md](PROGRESS.md)                                 | What is done, what is next, and the check that settled each one                                                  |
 | [CONTEXT-MAP.md](CONTEXT-MAP.md)                           | The two bounded contexts, how they relate, and a glossary for each                                               |
 | [docs/architecture.md](docs/architecture.md)               | Component map: what is built, what is not, and the known gaps                                                    |
-| [docs/adr/](docs/adr/)                                     | Seven decision records, each with the trade-off it accepted                                                      |
+| [docs/adr/](docs/adr/)                                     | Nine decision records, each with the trade-off it accepted                                                      |
 | [docs/PLAN.md](docs/PLAN.md)                               | The running log — every decision D1–D38, the milestones, what was verified on a running stack                    |
 | [docs/back-of-envelope.md](docs/back-of-envelope.md)       | The capacity estimate behind the Kafka partitioning trade-off                                                    |
 | [docs/testing-conventions.md](docs/testing-conventions.md) | The when/should naming pattern, what is tested at which layer, and how load-bearing tests are proven non-vacuous |
