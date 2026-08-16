@@ -37,6 +37,14 @@ export namespace CreateTenantDtos {
   }
 }
 
+export namespace ListTenantsDtos {
+  @ApiSchema({ name: 'ListTenantsResponseDto' })
+  export class ResponseDto {
+    @ApiProperty({ type: () => [CreateTenantDtos.ResponseDto] })
+    items: CreateTenantDtos.ResponseDto[];
+  }
+}
+
 export namespace CreateUserDtos {
   @ApiSchema({ name: 'CreateUserRequestDto' })
   export class RequestDto {

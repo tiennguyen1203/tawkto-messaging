@@ -635,8 +635,11 @@ every call it makes fails.
 
 The point of the whole exercise: choose who you are, get a token, and carry it.
 
-- `GET /for-demo/tenants` — **missing today**, and the picker needs it: you cannot
-  list a tenant's users without first choosing a tenant
+- `GET /for-demo/tenants` — **built**. The picker cannot ask for a tenant's users
+  without first offering a tenant, and this is the only route in either service that
+  says what tenants exist. It is unscoped by necessity — a tenant *is* the scope —
+  which is precisely why it lives behind `ForDemoOnlyGuard`: in a real product this
+  belongs to an admin context with its own authorisation, never to a tenant's users
 - Pick a tenant, see its users, pick one, receive a token
 - The token is held in memory and shown for copying. Not in `localStorage`: this is a
   demo tool that hands out credentials for any user by name, and a token that

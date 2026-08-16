@@ -111,6 +111,58 @@ describe('@identity/routers/for-demo/controller', () => {
     });
   });
 
+  describe('#GET /for-demo/tenants', () => {
+    describe('when tenants exist', () => {
+      it('should list all of them, because nothing else enumerates tenants', async () => {
+        // The picker cannot ask for a tenant's users until it can offer a tenant,
+        // and this is the only route in either service that will say what tenants
+        // there are.
+        await createTenant('First');
+        await createTenant('Second');
+
+        const res = await testHelper.request
+          .get('/api/v1/for-demo/tenants')
+          .expect(200);
+
+        // Compared as a set: the query sorts by createdAt, and two tenants created
+        // in the same millisecond have no defined order between them. Asserting a
+        // sequence here would fail on a fast machine and pass on a slow one.
+        expect(
+          res.body.data.items.map((t: { name: string }) => t.name).sort(),
+        ).toEqual(['First', 'Second']);
+      });
+
+      it('should give each one the id the users endpoint takes', async () => {
+        const created = await createTenant('Acme Corp');
+
+        const res = await testHelper.request
+          .get('/api/v1/for-demo/tenants')
+          .expect(200);
+
+        expect(res.body.data.items).toEqual([
+          {
+            id: created,
+            name: 'Acme Corp',
+            createdAt: expect.any(String),
+          },
+        ]);
+      });
+    });
+
+    describe('when there are no tenants', () => {
+      it('should answer 200 with an empty list rather than 404', async () => {
+        // An empty demo is a normal state, not a missing resource — the picker
+        // renders "nothing here yet" from this, and a 404 would read as a broken
+        // endpoint instead.
+        const res = await testHelper.request
+          .get('/api/v1/for-demo/tenants')
+          .expect(200);
+
+        expect(res.body.data.items).toEqual([]);
+      });
+    });
+  });
+
   describe('#POST /for-demo/users', () => {
     describe('when the tenant exists', () => {
       it('should answer 201 with the user in that tenant', async () => {
@@ -246,6 +298,10 @@ describe('@identity/routers/for-demo/controller', () => {
           .post('/api/v1/for-demo/tokens')
           .send({ userId: '6a7f352caefeeac0e37bd99c' })
           .expect(403);
+
+        // The listing most worth refusing: it names every organisation in the
+        // system, which no tenant's own user should ever be able to ask for.
+        await testHelper.request.get('/api/v1/for-demo/tenants').expect(403);
       } finally {
         process.env.APP_ENV = original;
       }

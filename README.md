@@ -35,6 +35,7 @@ and `ForDemoOnlyGuard` refuses all of them outside a local environment.
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/v1/for-demo/tenants` | Creates a tenant, and publishes the event that provisions its search alias |
+| `GET` | `/api/v1/for-demo/tenants` | Every tenant — the only route that enumerates them, and the first the picker calls |
 | `POST` | `/api/v1/for-demo/users` | Creates a user inside one |
 | `GET` | `/api/v1/for-demo/users?tenantId=` | Lists a tenant's users — what the picker UI will read |
 | `POST` | `/api/v1/for-demo/tokens` | Issues a token for a user id. No credential is checked |

@@ -22,11 +22,13 @@ import { API_TAGS, ROUTES } from '@/identity/common/routes.config';
 import { CreateTenantUseCase } from '@/identity/workflows/create-tenant/usecase';
 import { CreateUserUseCase } from '@/identity/workflows/create-user/usecase';
 import { IssueTokenUseCase } from '@/identity/workflows/issue-token/usecase';
+import { ListTenantsUseCase } from '@/identity/workflows/list-tenants/usecase';
 import { ListUsersUseCase } from '@/identity/workflows/list-users/usecase';
 import {
   CreateTenantDtos,
   CreateUserDtos,
   IssueTokenDtos,
+  ListTenantsDtos,
   ListUsersDtos,
 } from './dtos';
 
@@ -46,6 +48,7 @@ import {
 export class ForDemoController {
   constructor(
     private readonly createTenantUseCase: CreateTenantUseCase,
+    private readonly listTenantsUseCase: ListTenantsUseCase,
     private readonly createUserUseCase: CreateUserUseCase,
     private readonly listUsersUseCase: ListUsersUseCase,
     private readonly issueTokenUseCase: IssueTokenUseCase,
@@ -61,6 +64,20 @@ export class ForDemoController {
     return this.createTenantUseCase.executeOrThrowHttpError({
       name: body.name,
     });
+  }
+
+  @Get(ROUTES.tenants)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: ListTenantsDtos.ResponseDto })
+  @ApiOperation({
+    operationId: 'listTenants',
+    description:
+      'Every tenant there is. The picker needs one before it can ask for users, ' +
+      'and nothing else in the system enumerates tenants — see the use case for ' +
+      'why that is deliberate.',
+  })
+  async listTenants(): Promise<ListTenantsDtos.ResponseDto> {
+    return this.listTenantsUseCase.executeOrThrowHttpError();
   }
 
   @Post(ROUTES.users)
