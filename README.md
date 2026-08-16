@@ -6,13 +6,73 @@ A message is written once, to MongoDB. Debezium carries the change to Kafka, a
 consumer projects it into Elasticsearch, and search reads it back — scoped to a
 tenant by the repository rather than by its callers, at every step.
 
-**Where this has got to, and what proved each step, is in
-[PROGRESS.md](PROGRESS.md)** — one file claims status, so there is one file to
-correct when it changes. What is deliberately absent is listed
+Status: [PROGRESS.md](PROGRESS.md) · wiring: [architecture](docs/architecture.md) ·
+decisions: [ADRs](docs/adr/) · log: [PLAN](docs/PLAN.md) · what is missing on purpose:
 [below](#what-is-deliberately-not-here).
-See [docs/architecture.md](docs/architecture.md) for what is wired to what,
-[docs/adr/](docs/adr/) for the decisions and the trade-offs each accepted, and
-[docs/PLAN.md](docs/PLAN.md) for the running log.
+
+## Run it
+
+```bash
+corepack enable pnpm   # once
+pnpm install           # ~10s
+pnpm stack:up          # ~5 min first time (2 GB of Docker images), ~80s after
+```
+
+Open **http://localhost:8088**, use the switcher in the top right to make a tenant
+and two people, and start a chat.
+
+| | |
+|---|---|
+| Demo UI | http://localhost:8088 |
+| Messaging API | http://localhost:3000 · [Swagger](http://localhost:3000/swagger) |
+| Identity API | http://localhost:3001 |
+
+`stack:up` brings up infrastructure, migrations, the search index, the Kafka topics,
+the CDC connector and the app containers, in that order. It is idempotent — re-run it
+to recover from a half-finished start. `pnpm stack:down` stops it, keeping the data.
+
+Needs Node 22+, pnpm 11+, and Docker with ~5 GB free and 4 GB of memory.
+
+### Doing it by hand
+
+What `stack:up` runs, if you need to do one step at a time:
+
+```bash
+cp .env.example .env
+docker compose up -d mongo redis kafka kafka-connect elasticsearch
+docker compose ps                                    # wait for all five: healthy
+docker compose --profile migrate run --rm migrate    # indexes, change-stream pre-images
+pnpm es:apply-templates                              # index + mapping
+pnpm kafka:create-topics                             # both topics
+pnpm debezium:register                               # the CDC connector
+docker compose --profile app up -d --build           # API, indexer, identity, UI
+```
+
+From source instead of containers, while changing it:
+
+```bash
+pnpm start:dev         # API, watch mode
+pnpm start:consumer    # indexer
+pnpm start:identity    # identity
+pnpm ui:dev            # client on :5173, proxying to both
+```
+
+- Provisioning is separate from boot on purpose: replicas would race, and a failed
+  index or topic should stop a deploy rather than a request. All idempotent.
+- The TypeScript tools run from the host — the production image ships runtime
+  dependencies only. `migrate` is the exception and has its own compose service.
+- `KAFKA_BROKERS` is **9094**, the listener published to the host. `9092` is internal
+  and unreachable from a consumer started with pnpm.
+- Ports are off the defaults so nothing collides: Mongo **27018**, Redis **6380**, UI
+  **8088**. Override with `MONGO_HOST_PORT`, `REDIS_HOST_PORT`, `DEMO_UI_PORT`.
+
+### Why a replica set for a single node
+
+Change streams — the source Debezium tails — are unavailable on a standalone
+MongoDB. Running one node as `rs0` is the smallest configuration that supports
+them.
+
+---
 
 ## Endpoints
 
@@ -53,65 +113,7 @@ paths, and now covered by three tests that a mutation each kills.
 
 ---
 
-## Requirements
-
-- Node.js 22+
-- pnpm 11+ (`corepack enable pnpm`)
-- Docker (for MongoDB, Redis, and the test containers)
-
-## Getting started
-
-```bash
-pnpm install
-cp .env.example .env
-
-# MongoDB (single-node replica set), Redis, Kafka, Debezium and Elasticsearch.
-# Kafka Connect is a JVM and takes ~60s to report healthy.
-docker compose up -d mongo redis kafka kafka-connect elasticsearch
-docker compose ps            # wait for all five to be healthy
-
-pnpm migrate:up              # MongoDB indexes and change stream pre-images
-pnpm es:apply-templates      # the Elasticsearch index, its mapping, and the
-                             # cluster's refusal to auto-create messages-* indices
-pnpm kafka:create-topics     # both topics, with the partition counts they need
-pnpm debezium:register       # the CDC connector
-
-pnpm start:dev               # the API
-pnpm start:consumer          # the indexer, in a second terminal
-```
-
-Or run the services themselves in containers, from the same image:
-
-```bash
-docker compose --profile app up -d messaging-api messaging-consumer identity-api
-```
-
-The provisioning steps above still run from the host — they are TypeScript tools and
-the production image ships runtime dependencies only. `migrate` is the exception and
-has its own compose service, because `migrate-mongo` is a runtime dependency:
-
-```bash
-docker compose --profile migrate run --rm migrate
-```
-
-The provisioning steps are separate commands rather than boot-time work for the same
-reason: replicas would race each other, and a mapping, an index or a topic that fails
-to apply should stop a deploy rather than a request. All are idempotent.
-
-`KAFKA_BROKERS` points at **9094**, the listener compose publishes to the host. `9092`
-is the internal one, reachable only from another container — a consumer started with
-pnpm cannot use it.
-
-Then:
-
-- Health check — http://localhost:3000/api/health
-- Swagger UI — http://localhost:3000/swagger
-
-MongoDB binds to host port **27018** and Redis to **6380** by default, so this stack
-does not collide with other projects already using the standard ports. Override with
-`MONGO_HOST_PORT` / `REDIS_HOST_PORT`.
-
-### The demo UI
+## The demo UI
 
 A Vue 3 client in [ui/](ui/), shaped like a messenger: chats on the left, the
 conversation on the right, and an identity switcher in the top right. Switching
@@ -126,20 +128,10 @@ browser driving the container, split into
 had just asserted something about, including the states nobody clicks through by
 hand.
 
-```bash
-pnpm ui:install
-pnpm ui:dev                  # http://localhost:5173, proxying to both APIs
-```
-
-Vite proxies `/identity-api` to 3001 and `/api` to 3000, so the browser makes
-same-origin calls and neither service needs a CORS policy yet (PLAN §10b).
-
-In a container it is its own service — nginx, serving the built assets and
-proxying the same two prefixes:
-
-```bash
-docker compose --profile app up -d --build demo-ui   # http://localhost:8088
-```
+`pnpm stack:up` serves it from nginx at **:8088**. While changing it, `pnpm ui:dev`
+runs Vite on :5173 instead; both proxy `/identity-api` to 3001 and `/api` to 3000, so
+the browser makes same-origin calls and neither service needs a CORS policy (PLAN
+§10b). The two proxy configs have to be changed together.
 
 It builds from [ui/Dockerfile](ui/Dockerfile), with `ui/` as its whole build context
 — the client shares no stage with the server's image. `pnpm ui:build` is for working
@@ -160,12 +152,6 @@ The proxy is deliberately the only thing in front of the APIs. It is not a gatew
 no authentication, no rate limiting, no request shaping — it routes two prefixes so
 the browser stays on one origin. See PLAN §10b for when a real one would earn its
 keep.
-
-### Why a replica set for a single node
-
-Change streams — the source Debezium tails — are unavailable on a standalone
-MongoDB. Running one node as `rs0` is the smallest configuration that supports
-them.
 
 ## Architecture
 
@@ -337,6 +323,8 @@ which resolves through a string token the scanner cannot follow.
 
 | Command | Purpose |
 |---|---|
+| `pnpm stack:up` | Everything: infrastructure, provisioning, then the three app containers. Idempotent |
+| `pnpm stack:down` | Stops it all, keeping the volumes |
 | `pnpm build` | Compile with `tsc` (not the Nest CLI — see D26 in the plan) |
 | `pnpm start:dev` | HTTP API with watch mode |
 | `pnpm start:consumer` | Kafka → Elasticsearch indexer |
