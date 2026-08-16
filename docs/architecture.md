@@ -1,92 +1,8 @@
 # Architecture
 
-Every component of the service and what state it is in. Kept beside the code so
-it can be corrected in the same commit as the thing it describes.
-
-| | Meaning |
-|---|---|
-| green | Built and verified on a running stack |
-| grey, dashed box | **`for-demo`** — scaffolding, so the service can be shown to somebody. It would not ship in this form |
-
-Everything is green: there is nothing here that is built but unproven, and nothing
-sketched that does not run. Amber and red were in this legend while that was not
-true, and are gone with the things they described.
-
-```mermaid
-flowchart TD
-    client(["Client<br/>bearer token carries sub + tenantId"])
-
-    subgraph api["Messaging API — src/messaging/main.ts"]
-        direction TB
-        guard["JwtStrategyGuard<br/>verifies JWT, puts tenantId in CLS"]
-        ctl["Controllers<br/>conversations · messages · health"]
-        uc["Use cases<br/>create conversation · create message · list messages"]
-        repo["Tenant-scoped repositories<br/>every filter confined to the tenant"]
-        searchuc["Search use case<br/>GET conversations/:id/messages/search"]
-    end
-
-    %% Everything in this box exists so the messaging service can be demonstrated.
-    %% None of it is the subject, and none of it would ship as-is.
-    subgraph fordemo["for-demo — scaffolding, so messaging can be shown"]
-        direction TB
-
-        demoui["Demo UI — ui/, Vue on nginx<br/>chat rail · thread · identity switcher<br/>proxies /identity-api and /api, one origin"]
-
-        subgraph identity["Identity — src/identity/main.ts"]
-            direction TB
-            idctl["for-demo controllers<br/>tenants · users · tokens<br/>no credential is checked"]
-            idrepo["Tenant and User repositories"]
-            idpub["Tenant events publisher"]
-        end
-    end
-
-    mongo[("MongoDB — replica set rs0<br/>conversations · messages<br/>indexes owned by migrations")]
-    redis[("Redis<br/>conversation summaries, 60s TTL<br/>key carries the tenant")]
-    dbz["Debezium on Kafka Connect<br/>unwrap envelope · re-key by conversation"]
-    kafka[["Kafka — KRaft, no Zookeeper<br/>messaging.message-changed.v1<br/>6 partitions · key = conversationId"]]
-    consumer["Messaging indexer — src/messaging/main.consumer.ts<br/>eachBatch → one ordered bulk request<br/>create · update · delete<br/>document id = message id, so replay overwrites"]
-    es[("Elasticsearch<br/>one index, filtered alias per tenant<br/>content analysed · metadata flattened")]
-
-    client -->|browser| demoui
-    demoui -->|/identity-api/* prefix stripped| idctl
-    demoui -->|/api/*| guard
-    idctl --> idrepo
-    idctl --> idpub
-    idrepo -->|tenants · users| mongo
-    idpub -->|identity.tenant-created.v1| kafka
-    idctl -.->|signed JWT| demoui
-
-    client -->|HTTPS, token in hand| guard
-    guard --> ctl
-    ctl --> uc
-    uc --> repo
-    repo -->|one insert and keyset read| mongo
-    repo -->|conversation summary, keyed by tenant| redis
-    mongo -->|oplog| dbz
-    dbz -->|publish| kafka
-    kafka -->|one partition per conversation| consumer
-    kafka -->|tenant created| consumer
-    consumer -->|provision alias| es
-    consumer -->|index and delete, in event order| es
-    ctl --> searchuc
-    searchuc -->|match and search_after| es
-
-    classDef done fill:#e7f4ec,stroke:#17804a,stroke-width:2px,color:#11161d
-    classDef plain fill:#f2f4f7,stroke:#8b95a1,stroke-width:1px,color:#11161d
-
-    class client plain
-    class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es,searchuc done
-    class idctl,idrepo,idpub done
-    class demoui done
-    class redis done
-
-    %% Grey and dashed, so the eye reads this as the stage rather than the play —
-    %% including the cluster nested inside it, which otherwise renders in the same
-    %% colour as the service being assessed and pulls the attention the wrong way.
-    style fordemo fill:#f6f7f9,stroke:#8b95a1,stroke-width:1px,stroke-dasharray: 6 4
-    style identity fill:#eceef2,stroke:#8b95a1,stroke-width:1px
-    style api fill:#eaf4ee,stroke:#17804a,stroke-width:2px
-```
+The detail behind the diagram, which lives in the [README](../README.md) where more
+people will see it. Kept beside the code so it can be corrected in the same commit as
+the thing it describes.
 
 A message is written **once**, to MongoDB. Nothing publishes to Kafka on the
 request path — Debezium reads the oplog instead, so there is no moment where the
@@ -102,7 +18,7 @@ compose, as is searching it: a term posted through the API is findable within a
 couple of seconds, scoped to one conversation and one tenant. Every arrow carries
 traffic — the one dashed edge is a response, not an unbuilt flow.
 
-**The grey box is the point of the picture.** Identity and the demo client are in it
+**The grey `for-demo` box is the point of the picture.** Identity and the demo client are in it
 because neither is the subject: the brief asks for messaging, and these exist so that
 messaging can be driven by a person rather than by curl. Identity hands out a token
 to anyone who names a user, without checking a credential — `ForDemoOnlyGuard`
@@ -116,13 +32,161 @@ would simply have to issue your own tokens.
 
 ## What state each component is in
 
-The colours in the diagram above are the answer: green does work in the running
-system, amber exists and is proven but nothing calls it, red is not built.
+Everything in the diagram is green: every component does work in the running system.
+Nothing is built-but-unproven and nothing is sketched-but-absent, which is why the
+legend has only the one colour and the one grey box.
 
 **Milestone status is not here** — it is in [PROGRESS.md](../PROGRESS.md), which is
 the only file that claims what is done and names the check that settled it. A table
 of phases in a document about components was a second place for that to drift, and
 it drifted.
+
+## How it works
+
+### Change data capture instead of dual writes
+
+`POST /api/v1/messages` performs exactly one write, to MongoDB. Nothing publishes
+to Kafka on the request path. Debezium tails the oplog and produces the event, so
+there is no window in which the message is stored but the event is lost — the
+failure a dual write cannot avoid. See ADR-002 for what this costs.
+
+```
+POST /messages ─► mongo (one insert) ─► oplog ─► Debezium ─► messaging.message-changed.v1
+                                                              6 partitions, key = conversationId
+```
+
+Keying by `conversationId` puts all of a conversation's messages on one partition,
+so a single consumer processes them in order. Watch the stream with:
+
+```bash
+docker exec techbank-interview-2-kafka-1 kafka-console-consumer \
+  --bootstrap-server kafka:9092 --topic messaging.message-changed.v1 \
+  --from-beginning --property print.key=true --property print.partition=true
+```
+
+The event is the stored document, flattened — ids arrive as hex strings and dates
+as epoch milliseconds. The document keeps Mongo's own field
+names, `_id` included: the only consumer is our indexer, inside the same bounded
+context, so a cosmetic rename would buy nothing. `_id` is kept out of the _API_
+by the response DTOs instead. A sample record is recorded in
+[docs/PLAN.md](docs/PLAN.md).
+
+The topic is named `changed`, not `created`, because it carries the whole change
+stream: a create, an edit and a deletion all travel over it, keyed by conversation so
+one message's history stays on one partition and in order. The consumer turns each
+event into one Elasticsearch operation in that same order — writes replace the
+document whole, deletions remove it.
+
+### Processes
+
+One image, several entrypoints. They share `commonModules` from
+[src/messaging/app.module.ts](src/messaging/app.module.ts) and are deployed as separate services so they
+scale independently.
+
+| Entrypoint                       | Compose service      | Role                                              |
+| -------------------------------- | -------------------- | ------------------------------------------------- |
+| `src/messaging/main.ts`          | `messaging-api`      | HTTP API                                          |
+| `src/messaging/main.consumer.ts` | `messaging-consumer` | Kafka → Elasticsearch indexer                     |
+| `src/identity/main.ts`           | `identity-api`       | Tenants, users and the tokens that carry them     |
+| `migrate-mongo`                  | `migrate`            | One-shot migration runner                         |
+| _(Kafka Connect)_                | `kafka-connect`      | Debezium connector — infrastructure, not our code |
+
+All of ours are **one image with a different command**, not several Dockerfiles —
+the image has no default, so a container that names no command prints the choices and
+exits rather than silently starting the wrong one.
+
+### Layers
+
+```
+messaging/            the bounded context — everything about conversations and messages
+  routers/            HTTP controllers and DTOs — no business logic
+  workflows/          use cases — one per directory; business rules live here
+  cores/              persistence models, repositories
+  consumers/          the Kafka → Elasticsearch indexer
+
+common/               shared kernel: base repository and model, base use case,
+                      guards, filters, interceptors, route config
+infra/                shared kernel: database, logging, CLS, caching, elasticsearch
+health-check/         process-level liveness, owned by no context
+
+app.module.ts         composition roots — above every context, and the only place
+consumer.module.ts    allowed to wire them together
+```
+
+A context may use the shared kernel; it may not reach into another context. That is
+a lint rule, not a convention — `pnpm lint` fails on a crossing import and says what
+to do instead. See [ADR-007](docs/adr/007-contexts-in-one-deployable.md).
+
+### Multi-tenancy
+
+`tenantId` is read once from the verified JWT by
+[JwtStrategy](src/shared/auth-passport/jwt.strategy.ts), pushed into CLS, and read
+from there by
+[TenantScopedRepository](src/shared/tenant-scoped.repository.ts). It is never
+accepted from a request body, param or query string.
+
+Every inherited method that takes a filter is overridden to apply it, and writes
+stamp `tenantId` rather than accept one — `Omit<Partial<T>, 'tenantId'>` makes
+supplying it a compile error. So isolation is a property of the repository rather
+than a discipline applied at each call site: a use case cannot leak across tenants
+by forgetting a clause, and a repository used with no tenant in scope throws
+instead of quietly querying everything.
+
+Two named doors lead out, and only two:
+
+|                   | For                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `forTenant(id)`   | Consumers, jobs and migrations that run outside a request and so have no CLS context |
+| `acrossTenants()` | Deliberately global work — a platform-admin report, a backfill across tenants        |
+
+Both are visible at the call site, which is the point: a cross-tenant query should
+be impossible to write by accident and trivial to grep for on purpose. The
+authority to use `acrossTenants()` is the use case's to check — the repository
+knows nothing about roles.
+
+### The empty-filter guard
+
+MongoDB drops `undefined` values from a filter, so `{ tenantId: undefined }`
+becomes `{}`. A read then returns an arbitrary document — in a multi-tenant system,
+someone else's — and `updateMany` / `deleteMany` affect every document in the
+collection. Neither raises an error.
+
+[BaseRepository](src/shared/base.repository.ts) refuses any call whose conditions
+all evaporated, turning a silent breach into a loud failure.
+[base.repository.spec.ts](src/shared/base.repository.spec.ts) covers it.
+
+### Search tolerates typos
+
+`fuzziness: AUTO` on the match, so `deploymnet` finds `deployment`. AUTO is per term
+by length: no edits below three characters, one up to five, two beyond — a blanket
+2 would make every short word a match for every other one.
+
+`prefix_length: 1` means the first character must be right. That is what stops a
+fuzzy term expanding across the dictionary, and the cost is that a typo in the first
+letter is not forgiven. Typos rarely are.
+
+A second, boosted, exact clause sits beside the fuzzy one so that a document
+containing the word as typed outranks one that merely resembles it. Not for the
+reason you would guess: Elasticsearch already blends the expanded terms' document
+frequencies (`top_terms_blended_freqs_50`), so IDF is not the problem. **Field-length
+normalisation is.** Measured on a real cluster, searching `bravo` against a long
+message containing `bravo` and a short one containing `bravos` scores the near miss
+0.91 and the exact hit 0.50 — the reader's own word comes second. The boost puts it
+back on top at 1.99.
+
+It is a thumb on the scale, not a guarantee: a long enough message still loses to a
+short variant.
+
+### Indexes
+
+Indexes live in `migrations/` and nowhere else; `autoIndex` is off in every
+environment. Building indexes at process start is an unbounded blocking operation
+on a large collection, and a schema that declares indexes the database may not
+actually have is worse than one that declares none. Tests run the same migrations,
+so they exercise the real indexes.
+
+Migrations are plain CommonJS so the same files load unchanged from the CLI and
+from inside jest, with no build step in between.
 
 ## Known gaps
 
