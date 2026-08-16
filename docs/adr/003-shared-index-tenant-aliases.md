@@ -66,12 +66,15 @@ tenants are unremarkable; tens of thousands make the alias list itself the probl
 The migration path at that point is *not* back to per-query filters — it is grouping
 tenants into a handful of shared indices, with the alias still the name callers use.
 
-**Alias creation currently happens on the write path**, cached per process in a
-`Set`. That is the wrong place: creating an alias is a tenant-lifecycle event, not
-something the indexing hot path should decide. It belongs in tenant provisioning,
-which this codebase does not have yet — see [PLAN.md §10](../PLAN.md), which also
-records the failure mode a stale cache produces and the cheaper fix
-(`action.auto_create_index`) that neutralises it either way.
+**Alias creation now happens twice over, and that is the design.** Identity
+publishes `identity.tenant-created.v1` and messaging provisions the alias before the
+tenant's first message exists — creating an alias is a tenant-lifecycle event, not
+something the indexing hot path should decide. `ensureAlias` still runs on the write
+path, cached per process in a `Set`, as the recovery path for an event that was never
+seen: publishing it is a dual write, the only one in the system, and a lost publish
+degrades to the behaviour that existed before the event did. What made that dangerous
+— an alias typo silently becoming a concrete index — is refused by
+`action.auto_create_index`.
 
 **Reads never provision.** `search` does not create the alias: a tenant with nothing
 indexed simply has none, and `ignore_unavailable` turns that into an empty page.
