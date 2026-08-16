@@ -21,6 +21,7 @@ See [docs/architecture.md](docs/architecture.md) for what is wired to what,
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
+| `GET` | `/api/v1/conversations` | The caller's own conversations, newest first, cursor paginated |
 | `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
 | `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
 | `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored |
@@ -42,7 +43,13 @@ and `ForDemoOnlyGuard` refuses all of them outside a local environment.
 | `GET` | `/api/health` | Public |
 
 Another tenant's conversation answers **404**, never 403 — a 403 would confirm it
-exists. A known conversation with a non-participant sender answers **403**.
+exists. A conversation in your own tenant that you are not a participant of answers
+**403**, on reading and on writing alike.
+
+That last clause used to be true only of writing. Reading checked the tenant and
+stopped there, so any token for a tenant could read any conversation in it by id —
+found by pointing a browser at the Isolation panel of the demo UI, fixed in both read
+paths, and now covered by three tests that a mutation each kills.
 
 ---
 
@@ -106,14 +113,18 @@ does not collide with other projects already using the standard ports. Override 
 
 ### The demo UI
 
-A Vue 3 client in [ui/](ui/), for driving the demo by hand: pick a tenant, pick one
-of its users, take their token. The messaging pane is [I5](PROGRESS.md) and still to
-come.
+A Vue 3 client in [ui/](ui/), shaped like a messenger: chats on the left, the
+conversation on the right, and an identity switcher in the top right. Switching
+between two people is the most repeated action in a multi-tenant demo, so it is one
+click rather than a page of its own.
 
 **What it looks like, and what was checked:**
-[docs/ui-review/index.html](docs/ui-review/index.html) — twelve screenshots taken by
-a real browser driving the container, each at a point a test had just asserted
-something about, including the states nobody clicks through by hand.
+[docs/ui-review/index.html](docs/ui-review/index.html) — screenshots taken by a real
+browser driving the container, split into
+[the messenger](docs/ui-review/messenger.html) and
+[what the API refuses](docs/ui-review/refusals.html). Each is taken at a point a test
+had just asserted something about, including the states nobody clicks through by
+hand.
 
 ```bash
 pnpm ui:install

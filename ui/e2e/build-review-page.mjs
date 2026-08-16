@@ -2,12 +2,15 @@ import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Turns the screenshots the Playwright run just produced into one page to open.
+ * Turns the screenshots the Playwright run just produced into pages to open.
+ *
+ * One page per subject rather than one long scroll: a reviewer looking at search
+ * should not have to walk past eight pictures of the picker to reach it. `index.html`
+ * is a contents page and holds no screenshots of its own.
  *
  * Generated rather than hand-written so it cannot drift: it lists what is actually
- * on disk, and a shot that stops being taken disappears from the page instead of
- * becoming a broken image. A caption it does not recognise is flagged rather than
- * silently left blank — an unexplained screenshot is decoration.
+ * on disk, a shot that stops being taken disappears instead of becoming a broken
+ * image, and one that appears without a caption is reported rather than shown blank.
  *
  *   node e2e/build-review-page.mjs        (or: pnpm ui:review from the root)
  */
@@ -16,92 +19,82 @@ const SHOTS = join(ROOT, 'screenshots');
 
 /** What each shot is evidence of. Keyed by file name without the extension. */
 const CAPTIONS = {
-  '01-picker-initial': {
-    title: 'Nothing chosen yet',
-    body: 'The landing state. The user card refuses to guess — it says to choose a tenant first, because listing users needs one.',
+  '30-signed-out': {
+    title: 'Before anyone is signed in',
+    body: 'Messaging reads the tenant out of the token on every request, so the app says what is missing rather than showing an empty shell that looks broken.',
   },
-  '02-tenant-created-no-users': {
-    title: 'A tenant with no users',
-    body: 'Creating a tenant selects it, and the empty user list says what to do next rather than showing a blank area. Behind this, identity has already published <code>identity.tenant-created.v1</code> and messaging has provisioned the tenant’s search alias.',
+  '31-switcher-open': {
+    title: 'The switcher, top right',
+    body: 'Where an account menu lives in every product anyone has used. It carries the seeding too — making a tenant or a person is the same errand as choosing one, and splitting them across two places means walking back and forth. Adding somebody selects them and takes their token in the same motion.',
   },
-  '03-user-selected': {
-    title: 'A user to act as',
-    body: 'Each option carries its email, because two people called Alice is the normal case and an opaque id is not a choice anyone can make.',
+  '32-no-chats': {
+    title: 'Signed in, no chats',
+    body: '<code>GET /conversations</code> returns only the caller’s own, so an empty rail is the honest answer rather than a filtered one.',
   },
-  '04-token-issued': {
-    title: 'A token, masked',
-    body: 'The badges say what is held. The token is masked by default: a screenshot of this page, or a shoulder behind it, should not be a credential leak.',
+  '33-empty-chat': {
+    title: 'A new conversation',
+    body: '<code>POST /conversations</code>; the creator is added automatically, so only the other person is chosen. The header names them — it showed a fragment of their id until a test asserted otherwise.',
   },
-  '05-token-revealed': {
-    title: 'Revealed and copyable',
-    body: 'Shown on request. Truncated on screen, whole in the clipboard — what you copy is never less than what you were shown.',
+  '34-chat-first-page': {
+    title: 'One page of messages',
+    body: 'Seven <code>POST /messages</code>, then <code>GET /conversations/:id/messages</code>. Five per page, deliberately tiny: at a sensible page size, cursor pagination is invisible in a demo. Sender and timestamp are the server’s, never the client’s.',
   },
-  '06-after-reload-token-gone': {
-    title: 'Reload, and it is gone',
-    body: 'Held in memory only. These endpoints issue a token for anyone who is named, so one that survives a reload is one nobody meant to keep.',
+  '35-chat-after-paging': {
+    title: 'The rest, by cursor',
+    body: 'Keyset pagination, not an offset: the cursor is the last row’s timestamp and id, so a message arriving mid-read cannot shift a page and hide a row (ADR-004).',
   },
-  '07-tenants-failed': {
-    title: 'Identity unreachable',
-    body: 'The state nobody clicks through by hand, which is why it is the one that ships broken. The message is the server’s own, and there is a way back.',
+  '36-search-results': {
+    title: 'Search inside the conversation',
+    body: '<code>GET /conversations/:id/messages/search?q=</code>, taking over the thread while it has a query. Mongo → Debezium → Kafka → Elasticsearch means a message sent a second ago is not findable yet, so the test polls rather than sleeping.',
   },
-  '08-picker-light': {
+  '37-isolation-proved': {
+    title: 'Refused twice, for two different reasons',
+    body: 'Each button mints a real second identity and asks for this same conversation. Another tenant gets <strong>404</strong> — even its existence belongs to its owner. A colleague in the tenant who is not a participant gets <strong>403</strong>. <strong>This panel found a real hole:</strong> both read paths checked the tenant and stopped there, so any token for a tenant could read any conversation in it by id. Fixed, and held by three tests.',
+  },
+  '38-as-the-other-person': {
+    title: 'The same conversation, as Bob',
+    body: 'One click in the switcher. A different token, a different list from <code>GET /conversations</code>, the same thread from the other side — which is the whole reason the switcher is in the header rather than on a page of its own.',
+  },
+  '39-reply-from-bob': {
+    title: 'A reply',
+    body: 'Own messages sit right and tinted, and still say who sent them: side and colour are both invisible to a screen reader.',
+  },
+  '40-messenger-light': {
     title: 'Light',
     body: 'Tokens are defined light-first and swapped under <code>prefers-color-scheme</code>.',
   },
-  '09-picker-dark': {
+  '41-messenger-dark': {
     title: 'Dark',
     body: 'Lifted, desaturated accents rather than the light values inverted — the same hue at full saturation on a dark surface vibrates and loses contrast.',
   },
-  '10-health-dark': {
-    title: 'Health, dark',
-    body: 'Both services through the one proxy. The status is a word as well as a colour.',
-  },
-  '11-health-light': {
-    title: 'Health, light',
-    body: 'The same page in the other theme, checked rather than assumed.',
-  },
-  '12-picker-narrow': {
-    title: '375px',
-    body: 'The rows wrap instead of scrolling sideways. The test asserts that too — <code>scrollWidth</code> may not exceed <code>clientWidth</code>.',
+  '42-messenger-narrow': {
+    title: '390px',
+    body: 'The rail stacks above the thread instead of squeezing beside it. The test asserts it too: <code>scrollWidth</code> may not exceed <code>clientWidth</code>.',
   },
 };
 
-const shots = readdirSync(SHOTS)
-  .filter((file) => file.endsWith('.png'))
-  .sort();
-
-if (shots.length === 0) {
-  throw new Error(`No screenshots in ${SHOTS}. Run \`pnpm e2e\` in ui/ first.`);
-}
+/** One page each. A shot not claimed by a group is reported, never dropped. */
+const PAGES = [
+  {
+    file: 'messenger.html',
+    title: 'The messenger',
+    blurb:
+      'Switch identity from the header, start a chat, post into it, page back through it by cursor, search it, and read the same conversation as the other person. The three endpoints the brief grades, driven through the interface rather than described.',
+    match: (name) => /^(3[0-6]|38|39|4\d)-/.test(name),
+  },
+  {
+    file: 'refusals.html',
+    title: 'What the API refuses',
+    blurb:
+      'The two callers messaging must turn away, and why each gets a different answer. This page is the reason a real authorisation hole was found and fixed.',
+    match: (name) => /^37-/.test(name),
+  },
+];
 
 const escape = (text) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const figures = shots
-  .map((file) => {
-    const key = file.replace(/\.png$/, '');
-    const caption = CAPTIONS[key];
-    const title = caption ? escape(caption.title) : escape(key);
-    // Captions carry deliberate <code> markup, so they are not escaped; the
-    // unknown-key fallback is, since it comes from a file name.
-    const body = caption
-      ? caption.body
-      : '<em>No caption for this shot — add one in e2e/build-review-page.mjs.</em>';
-
-    return `      <figure>
-        <img src="screenshots/${file}" alt="${title}" loading="lazy" />
-        <figcaption><strong>${title}</strong><span>${body}</span></figcaption>
-      </figure>`;
-  })
-  .join('\n');
-
-const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Demo UI — review</title>
-    <style>
+const STYLE = `
       :root {
         color-scheme: light dark;
         --bg: #f6f7f9; --surface: #fff; --border: #d3d8e0;
@@ -125,7 +118,17 @@ const html = `<!doctype html>
         font-size: 0.9em; background: color-mix(in srgb, var(--border) 45%, transparent);
         padding: 1px 5px; border-radius: 4px;
       }
-      .shots { display: grid; gap: 32px; margin-top: 32px; }
+      nav.crumb { margin-bottom: 20px; font-size: 14px; }
+      .cards { display: grid; gap: 16px; margin-top: 28px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .cards a {
+        display: grid; gap: 6px; padding: 18px; text-decoration: none;
+        background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+      }
+      .cards a:hover { border-color: var(--accent); }
+      .cards strong { font-size: 15px; }
+      .cards span { font-size: 14px; color: var(--muted); }
+      .cards em { font-size: 13px; color: var(--muted); font-style: normal; }
+      .shots { display: grid; gap: 32px; margin-top: 28px; }
       figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
       img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--border); }
       figcaption { display: grid; gap: 4px; padding: 14px 18px; }
@@ -133,44 +136,137 @@ const html = `<!doctype html>
       figcaption span { font-size: 14px; color: var(--muted); }
       footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
       a { color: var(--accent); }
-    </style>
+`;
+
+const document_ = (title, body) => `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escape(title)}</title>
+    <style>${STYLE}    </style>
   </head>
   <body>
     <main>
-      <h1>Demo UI — review</h1>
+${body}
+    </main>
+  </body>
+</html>
+`;
+
+const figureFor = (file) => {
+  const key = file.replace(/\.png$/, '');
+  const caption = CAPTIONS[key];
+  const title = caption ? escape(caption.title) : escape(key);
+  // Captions carry deliberate <code> and <strong>, so they are not escaped; the
+  // unknown-key fallback is, since it comes from a file name.
+  const body = caption
+    ? caption.body
+    : '<em>No caption for this shot — add one in e2e/build-review-page.mjs.</em>';
+
+  return `        <figure>
+          <img src="screenshots/${file}" alt="${title}" loading="lazy" />
+          <figcaption><strong>${title}</strong><span>${body}</span></figcaption>
+        </figure>`;
+};
+
+const shots = readdirSync(SHOTS)
+  .filter((file) => file.endsWith('.png'))
+  .sort();
+
+if (shots.length === 0) {
+  throw new Error(`No screenshots in ${SHOTS}. Run \`pnpm e2e\` in ui/ first.`);
+}
+
+const written = [];
+
+for (const page of PAGES) {
+  const mine = shots.filter((file) => page.match(file));
+  if (mine.length === 0) {
+    console.warn(`No screenshots matched ${page.file}; skipping it.`);
+    continue;
+  }
+
+  writeFileSync(
+    join(ROOT, page.file),
+    document_(
+      `${page.title} — demo UI review`,
+      `      <nav class="crumb"><a href="index.html">← All pages</a></nav>
+      <h1>${escape(page.title)}</h1>
+      <p class="lede">${page.blurb}</p>
+
+      <div class="shots">
+${mine.map(figureFor).join('\n')}
+      </div>
+
+      <footer>
+        ${mine.length} screenshots · generated by <code>ui/e2e/build-review-page.mjs</code>, do not edit by hand
+      </footer>`,
+    ),
+  );
+  written.push({ ...page, count: mine.length });
+}
+
+const orphans = shots.filter((file) => !PAGES.some((page) => page.match(file)));
+
+writeFileSync(
+  join(ROOT, 'index.html'),
+  document_(
+    'Demo UI — review',
+    `      <h1>Demo UI — review</h1>
       <p class="lede">
-        Every screenshot below was taken by a real Chromium driving the
-        <code>demo-ui</code> container, not the dev server — what a reviewer opens
-        is the nginx image, and the two differ in the proxy prefixes that have
-        already caught this project out once.
+        Every screenshot behind these pages was taken by a real Chromium driving the
+        <code>demo-ui</code> container, not the dev server — what a reviewer opens is
+        the nginx image, and the two differ in the proxy prefixes that have already
+        caught this project out once.
       </p>
       <p class="lede">
-        They are the output of assertions, not a separate exercise: each one is
-        taken at a point the test has just proved something about, so a shot that
-        stops being possible fails the run rather than quietly going stale.
+        They are the output of assertions, not a separate exercise: each is taken at
+        a point the test has just proved something about, so a shot that stops being
+        possible fails the run rather than quietly going stale. Two of them are here
+        because looking at pictures found defects a green suite did not — a health
+        badge painted red for a healthy service, and a read path that let any token
+        in a tenant read any conversation in it.
       </p>
       <p class="lede">
         Regenerate with <code>pnpm ui:e2e &amp;&amp; pnpm ui:review</code> from the
         repository root, with the stack up.
       </p>
 
-      <div class="shots">
-${figures}
+      <div class="cards">
+${written
+  .map(
+    (page) => `        <a href="${page.file}">
+          <strong>${escape(page.title)}</strong>
+          <span>${page.blurb}</span>
+          <em>${page.count} screenshots</em>
+        </a>`,
+  )
+  .join('\n')}
       </div>
-
+${
+  orphans.length
+    ? `
+      <p class="lede"><strong>Not on any page:</strong> ${orphans
+        .map((file) => `<code>${escape(file)}</code>`)
+        .join(', ')} — add a group in <code>build-review-page.mjs</code>.</p>`
+    : ''
+}
       <footer>
-        ${shots.length} screenshots · generated from <code>ui/e2e/picker.spec.ts</code> ·
-        this page is written by <code>ui/e2e/build-review-page.mjs</code> and should not be edited by hand
-      </footer>
-    </main>
-  </body>
-</html>
-`;
+        ${shots.length} screenshots across ${written.length} pages · generated by
+        <code>ui/e2e/build-review-page.mjs</code>, do not edit by hand
+      </footer>`,
+  ),
+);
 
-writeFileSync(join(ROOT, 'index.html'), html);
-console.log(`Wrote ${join(ROOT, 'index.html')} with ${shots.length} screenshots.`);
+console.log(
+  `Wrote index.html and ${written.length} pages (${shots.length} screenshots) into ${ROOT}.`,
+);
 
 const missing = shots.filter((file) => !CAPTIONS[file.replace(/\.png$/, '')]);
 if (missing.length > 0) {
   console.warn(`No caption for: ${missing.join(', ')}`);
+}
+if (orphans.length > 0) {
+  console.warn(`On no page: ${orphans.join(', ')}`);
 }

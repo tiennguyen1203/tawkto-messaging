@@ -1,18 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import HealthPage from '@/pages/HealthPage.vue';
-import PickerPage from '@/pages/PickerPage.vue';
+import MessagingPage from '@/pages/messaging/MessagingPage.vue';
 
 /**
- * The picker is the landing page because it is the point of the tool: nothing else
- * here works until you are somebody. Health moved to its own route rather than
- * being deleted — it is what to open first when the picker fails and the question
- * is whether the services are up.
+ * Chats are the landing page: this is a messenger, and the identity switcher in the
+ * header is how you become somebody, so there is no separate picker page to send
+ * anyone to. Health stays on its own route — it is what to open first when the
+ * chats fail and the question is whether the services are even up.
  */
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'picker', component: PickerPage },
+    { path: '/', name: 'chats', component: MessagingPage },
     { path: '/health', name: 'health', component: HealthPage },
   ],
 });

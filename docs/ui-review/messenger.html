@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The messenger — demo UI review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7f9; --surface: #fff; --border: #d3d8e0;
+        --text: #14181f; --muted: #5b6472; --accent: #2454c7;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1216; --surface: #171b21; --border: #2a313b;
+          --text: #e6e9ee; --muted: #9aa4b2; --accent: #7aa2f7;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); }
+      main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+      h1 { font-size: 22px; margin: 0 0 8px; }
+      .lede { color: var(--muted); margin: 0 0 8px; max-width: 68ch; }
+      code {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 0.9em; background: color-mix(in srgb, var(--border) 45%, transparent);
+        padding: 1px 5px; border-radius: 4px;
+      }
+      nav.crumb { margin-bottom: 20px; font-size: 14px; }
+      .cards { display: grid; gap: 16px; margin-top: 28px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .cards a {
+        display: grid; gap: 6px; padding: 18px; text-decoration: none;
+        background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+      }
+      .cards a:hover { border-color: var(--accent); }
+      .cards strong { font-size: 15px; }
+      .cards span { font-size: 14px; color: var(--muted); }
+      .cards em { font-size: 13px; color: var(--muted); font-style: normal; }
+      .shots { display: grid; gap: 32px; margin-top: 28px; }
+      figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+      img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--border); }
+      figcaption { display: grid; gap: 4px; padding: 14px 18px; }
+      figcaption strong { font-size: 14px; }
+      figcaption span { font-size: 14px; color: var(--muted); }
+      footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="crumb"><a href="index.html">← All pages</a></nav>
+      <h1>The messenger</h1>
+      <p class="lede">Switch identity from the header, start a chat, post into it, page back through it by cursor, search it, and read the same conversation as the other person. The three endpoints the brief grades, driven through the interface rather than described.</p>
+
+      <div class="shots">
+        <figure>
+          <img src="screenshots/30-signed-out.png" alt="Before anyone is signed in" loading="lazy" />
+          <figcaption><strong>Before anyone is signed in</strong><span>Messaging reads the tenant out of the token on every request, so the app says what is missing rather than showing an empty shell that looks broken.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/31-switcher-open.png" alt="The switcher, top right" loading="lazy" />
+          <figcaption><strong>The switcher, top right</strong><span>Where an account menu lives in every product anyone has used. It carries the seeding too — making a tenant or a person is the same errand as choosing one, and splitting them across two places means walking back and forth. Adding somebody selects them and takes their token in the same motion.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/32-no-chats.png" alt="Signed in, no chats" loading="lazy" />
+          <figcaption><strong>Signed in, no chats</strong><span><code>GET /conversations</code> returns only the caller’s own, so an empty rail is the honest answer rather than a filtered one.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/33-empty-chat.png" alt="A new conversation" loading="lazy" />
+          <figcaption><strong>A new conversation</strong><span><code>POST /conversations</code>; the creator is added automatically, so only the other person is chosen. The header names them — it showed a fragment of their id until a test asserted otherwise.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/34-chat-first-page.png" alt="One page of messages" loading="lazy" />
+          <figcaption><strong>One page of messages</strong><span>Seven <code>POST /messages</code>, then <code>GET /conversations/:id/messages</code>. Five per page, deliberately tiny: at a sensible page size, cursor pagination is invisible in a demo. Sender and timestamp are the server’s, never the client’s.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/35-chat-after-paging.png" alt="The rest, by cursor" loading="lazy" />
+          <figcaption><strong>The rest, by cursor</strong><span>Keyset pagination, not an offset: the cursor is the last row’s timestamp and id, so a message arriving mid-read cannot shift a page and hide a row (ADR-004).</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/36-search-results.png" alt="Search inside the conversation" loading="lazy" />
+          <figcaption><strong>Search inside the conversation</strong><span><code>GET /conversations/:id/messages/search?q=</code>, taking over the thread while it has a query. Mongo → Debezium → Kafka → Elasticsearch means a message sent a second ago is not findable yet, so the test polls rather than sleeping.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/38-as-the-other-person.png" alt="The same conversation, as Bob" loading="lazy" />
+          <figcaption><strong>The same conversation, as Bob</strong><span>One click in the switcher. A different token, a different list from <code>GET /conversations</code>, the same thread from the other side — which is the whole reason the switcher is in the header rather than on a page of its own.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/39-reply-from-bob.png" alt="A reply" loading="lazy" />
+          <figcaption><strong>A reply</strong><span>Own messages sit right and tinted, and still say who sent them: side and colour are both invisible to a screen reader.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/40-messenger-light.png" alt="Light" loading="lazy" />
+          <figcaption><strong>Light</strong><span>Tokens are defined light-first and swapped under <code>prefers-color-scheme</code>.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/41-messenger-dark.png" alt="Dark" loading="lazy" />
+          <figcaption><strong>Dark</strong><span>Lifted, desaturated accents rather than the light values inverted — the same hue at full saturation on a dark surface vibrates and loses contrast.</span></figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/42-messenger-narrow.png" alt="390px" loading="lazy" />
+          <figcaption><strong>390px</strong><span>The rail stacks above the thread instead of squeezing beside it. The test asserts it too: <code>scrollWidth</code> may not exceed <code>clientWidth</code>.</span></figcaption>
+        </figure>
+      </div>
+
+      <footer>
+        12 screenshots · generated by <code>ui/e2e/build-review-page.mjs</code>, do not edit by hand
+      </footer>
+    </main>
+  </body>
+</html>

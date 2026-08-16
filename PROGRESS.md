@@ -1,6 +1,7 @@
 # Progress
 
-**Where this is: I4 finished. I5 — the messaging pane — is next, and optional.**
+**Where this is: I6 finished — the demo UI is a messenger, and messaging grew the
+conversation list it needed. Every milestone in the plan is done.**
 
 The one place that says what is done. [PLAN.md](docs/PLAN.md) says what each part is
 and why it is shaped that way; this says whether it happened and what proved it.
@@ -28,7 +29,20 @@ cluster each found something the suite could not.
 | I2 | `tenant-created` event — identity publishes, messaging provisions the alias | done | The alias appeared ~2s after the tenant, with the right filter, **with no message ever sent** |
 | I3 | The demo UI shell — Vue, Vite, a typed API client, no features | done | The `demo-ui` container answering **`Content-Type: application/json`** on both proxied APIs — the check a 200 alone had passed while the app was broken. `POST` through the proxy returned 201; `/api/*` proved to reach messaging, not identity, by a route only messaging has; identity now 404s at `/` |
 | I4 | The picker — choose a tenant and a user, receive a token | done | A real Chromium driving the container through the whole flow: create a tenant, create a user, take a token, reload and watch it go. Twelve screenshots, each taken where a test had just asserted something — [docs/ui-review/index.html](docs/ui-review/index.html) |
-| **I5** | **The messaging pane** | **next, optional** | — |
+| I5 | The messaging pane — post, page, search, and the isolation probes | done | A browser posting seven messages, walking two cursor pages, finding two of them by keyword, and being refused 404 then 403. The probe found a real authorisation hole (below) |
+| I6 | The UI rebuilt as a messenger — chat rail, thread, identity switcher — and `GET /conversations` behind it | done | A browser signing in from the header, chatting, paging, searching, then becoming the other person and reading the same thread. The index it needs is proved used: `IXSCAN`, no in-memory sort |
+
+### The hole the demo found
+
+Both read paths — list and search — checked which **tenant** the conversation
+belonged to and stopped there. Membership was checked only when writing. Any token
+for a tenant could therefore read, or search, any conversation in that tenant by id.
+Reproduced with curl, fixed in both use cases, and covered by three tests; removing
+either check kills exactly the tests that name it.
+
+It had existed since M1 and no test noticed, because every read test held a
+participant's token. The scenario that found it was built to *demonstrate*
+authorisation, not to look for a bug in it.
 
 ### What the browser found that the unit tests could not
 

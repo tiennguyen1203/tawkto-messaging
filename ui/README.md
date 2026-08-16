@@ -44,6 +44,9 @@ prefix, so must the other.
 | `api/` | The typed client, the response envelope, and the `useRequest` loading/error convention |
 | `components/` | The shared components below. No page-specific knowledge, no fetching |
 | `pages/` | One file per route. Fetches, composes components, decides nothing about colour |
+| `pages/messaging/` | The one page big enough to split: the stream, the search and the isolation probes |
+| `session/` | Who you are acting as. In memory only — a reload asks again |
+| `e2e/` | Playwright, and the script that turns its screenshots into the review pages |
 | `shell/` | The frame around the router |
 | `styles.css` | Every design token. A component defines no colour of its own |
 

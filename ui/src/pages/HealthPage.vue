@@ -27,8 +27,16 @@ onMounted(() => {
   void messaging.run();
 });
 
+/**
+ * Terse's health check answers `ok` for the whole report and `up` for each
+ * indicator inside it. Comparing only against `ok` painted every healthy
+ * dependency red — which a green test suite was perfectly happy with, because
+ * nothing asserted on the colour. A screenshot caught it.
+ */
+const HEALTHY = new Set(['ok', 'up']);
+
 const toneOf = (status?: string): 'success' | 'danger' =>
-  status === 'ok' ? 'success' : 'danger';
+  status && HEALTHY.has(status) ? 'success' : 'danger';
 </script>
 
 <template>

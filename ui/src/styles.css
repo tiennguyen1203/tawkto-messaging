@@ -128,11 +128,20 @@ body {
   flex-wrap: wrap;
 }
 
+/* The whole app is one viewport-high grid: header, then a pane that scrolls
+   internally. A messenger whose thread scrolls the page instead of itself leaves
+   the composer somewhere off the bottom. */
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100dvh;
+}
+
 .app-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -146,6 +155,8 @@ body {
 .app-header nav {
   display: flex;
   gap: var(--space-3);
+  /* Takes the slack, which pushes the identity switcher to the right-hand end. */
+  margin-right: auto;
 }
 
 .app-header a {
@@ -167,8 +178,16 @@ body {
 }
 
 .app-main {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Pages that are documents rather than panes opt back into padding. */
+.app-main > .stack {
   padding: var(--space-5);
   max-width: 960px;
+  overflow-y: auto;
+  height: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

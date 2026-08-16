@@ -660,17 +660,26 @@ the assertions have just passed, so they cannot drift from what the app does.
 **Done when:** a reviewer with an empty database can open one page, create a tenant
 and a user, and end up holding a token that messaging accepts.
 
-#### I5 — The messaging pane — *optional, and the first thing that needs CORS*
+#### I5 — The messaging pane
 
-Post a message, list a conversation, search it — all with the token I4 handed out,
-so the demo shows the whole system rather than half of it.
+The three graded endpoints, demonstrated rather than described: create a conversation
+from the tenant's own users, post to it, page through it by cursor at a deliberately
+tiny page size, and search it — with the indexing lag stated on screen rather than
+looking like a fault.
 
-This is where **CORS on messaging** arrives, and not before: the UI is served from
-identity's origin, so the first cross-origin call is the first call to messaging.
-§10b explains why this is CORS and not a gateway.
+Then the part worth building for its own sake: an **Isolation** panel that mints a
+real second identity and asks for the same conversation with it. Another tenant must
+get 404, a non-participant inside the tenant must get 403, and the panel says which
+it expected.
 
-**Done when:** posting a message in the UI and finding it through the search box,
-without touching a terminal.
+That panel earned its keep immediately. Both read paths checked the tenant and not
+membership, so any token for a tenant could read every conversation in it. The write
+path had always checked. The fix makes the three agree, and three tests hold them
+there.
+
+**Done when:** a browser walks all of it against the container and the screenshots
+are on a page someone can open.
+
 
 #### Not planned
 
@@ -776,6 +785,24 @@ a silent, permanent corruption into a loud error. That is worth doing whether or
 creation moves to provisioning, and it is cheaper than either.
 
 ---
+
+#### I6 — The UI as a messenger
+
+The card-and-form demo proved the endpoints and looked like a tax return. A chat
+product should look like one: conversations on the left, the thread on the right, an
+identity switcher where an account menu goes.
+
+That forced an endpoint. A messenger needs a conversation list, and there was none —
+the gap M3.4 recorded when `lastMessageAt` was dropped. `GET /api/v1/conversations`
+returns the caller's own, newest first, keyset paginated, behind a multikey index on
+`(tenantId, participantIds, createdAt, _id)` added by migration. It deliberately does
+**not** list a tenant's conversations: the message endpoints refuse the ones you are
+not in, so such a list would be a directory of things to be told no about.
+
+Sorting is by `createdAt`, not last activity, and that is the honest limitation —
+sorting by newest message needs the `lastMessageAt` that was dropped, and maintaining
+it is an extra write on the hottest path in the product. It deserves its own decision
+rather than arriving as a side effect of a list endpoint.
 
 ## 10b. Deferred — an API gateway
 
