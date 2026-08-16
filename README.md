@@ -26,6 +26,14 @@ and two people, and start a chat.
 | Demo UI | http://localhost:8088 |
 | Messaging API | http://localhost:3000 · [Swagger](http://localhost:3000/swagger) |
 | Identity API | http://localhost:3001 |
+| Elasticsearch UI | http://localhost:8089 — indices, documents, raw queries |
+| MongoDB | `mongodb://localhost:27018/messaging?directConnection=true` |
+| Elasticsearch | http://localhost:9200 |
+| Kafka | `localhost:9094` · Connect on http://localhost:8083 |
+
+**`directConnection=true` is not optional** for Compass or any driver on the host.
+Mongo runs as a one-node replica set, so without it the client discovers the member
+by its in-network name and fails with `getaddrinfo ENOTFOUND mongo`.
 
 `stack:up` brings up infrastructure, migrations, the search index, the Kafka topics,
 the CDC connector and the app containers, in that order. It is idempotent — re-run it
@@ -71,87 +79,6 @@ pnpm ui:dev            # client on :5173, proxying to both
 Change streams — the source Debezium tails — are unavailable on a standalone
 MongoDB. Running one node as `rs0` is the smallest configuration that supports
 them.
-
----
-
-## Endpoints
-
-### Messaging — `localhost:3000`
-
-| Method | Path | Notes |
-|---|---|---|
-| `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
-| `GET` | `/api/v1/conversations` | The caller's own conversations, newest first, cursor paginated |
-| `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
-| `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
-| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored |
-| `GET` | `/api/health` | Public |
-
-### Identity — `localhost:3001`
-
-Seeding for a local demonstration. `for-demo` is in the path because these
-endpoints hand out a token to whoever names a user, without checking anything —
-and `ForDemoOnlyGuard` refuses all of them outside a local environment.
-
-| Method | Path | Notes |
-|---|---|---|
-| `POST` | `/api/v1/for-demo/tenants` | Creates a tenant, and publishes the event that provisions its search alias |
-| `GET` | `/api/v1/for-demo/tenants` | Every tenant — the only route that enumerates them, and the first the picker calls |
-| `POST` | `/api/v1/for-demo/users` | Creates a user inside one |
-| `GET` | `/api/v1/for-demo/users?tenantId=` | Lists a tenant's users — what the picker UI will read |
-| `POST` | `/api/v1/for-demo/tokens` | Issues a token for a user id. No credential is checked |
-| `GET` | `/api/health` | Public |
-
-Another tenant's conversation answers **404**, never 403 — a 403 would confirm it
-exists. A conversation in your own tenant that you are not a participant of answers
-**403**, on reading and on writing alike.
-
-That last clause used to be true only of writing. Reading checked the tenant and
-stopped there, so any token for a tenant could read any conversation in it by id —
-found by pointing a browser at the Isolation panel of the demo UI, fixed in both read
-paths, and now covered by three tests that a mutation each kills.
-
----
-
-## The demo UI
-
-A Vue 3 client in [ui/](ui/), shaped like a messenger: chats on the left, the
-conversation on the right, and an identity switcher in the top right. Switching
-between two people is the most repeated action in a multi-tenant demo, so it is one
-click rather than a page of its own.
-
-**What it looks like, and what was checked:**
-[docs/ui-review/index.html](docs/ui-review/index.html) — screenshots taken by a real
-browser driving the container, split into
-[the messenger](docs/ui-review/messenger.html) and
-[what the API refuses](docs/ui-review/refusals.html). Each is taken at a point a test
-had just asserted something about, including the states nobody clicks through by
-hand.
-
-`pnpm stack:up` serves it from nginx at **:8088**. While changing it, `pnpm ui:dev`
-runs Vite on :5173 instead; both proxy `/identity-api` to 3001 and `/api` to 3000, so
-the browser makes same-origin calls and neither service needs a CORS policy (PLAN
-§10b). The two proxy configs have to be changed together.
-
-It builds from [ui/Dockerfile](ui/Dockerfile), with `ui/` as its whole build context
-— the client shares no stage with the server's image. `pnpm ui:build` is for working
-locally, not a prerequisite. Port **8088** rather than 8080, which is contested enough that a page
-from another project answering instead is a real possibility.
-
-Identity served the UI first, and that was wrong in a way worth recording: the client
-asks for `/identity-api/...`, identity has no such prefix and nothing to strip one
-with, so the page loaded and every call it made came back as `index.html` under a
-200. Serving static files and proxying an API are one job, and nginx does both.
-
-`ui/` is a separate package on purpose: it is outside the pnpm workspace, has its
-own lockfile and tsconfig, and is excluded from the server's TypeScript projects.
-A Vue toolchain and a NestJS one disagree about `module`, `lib` and `types`, and
-sharing one config makes both worse.
-
-The proxy is deliberately the only thing in front of the APIs. It is not a gateway:
-no authentication, no rate limiting, no request shaping — it routes two prefixes so
-the browser stays on one origin. See PLAN §10b for when a real one would earn its
-keep.
 
 ## Architecture
 
@@ -374,3 +301,84 @@ Stated because their absence is a decision, not an oversight.
   Elasticsearch aliases are consequently created on first write, which is the wrong
   place for them; [PLAN.md §10](docs/PLAN.md) records why and what it would take to move them.
 - **No `lastMessageAt`, no unread counts, no read receipts, no attachments.**
+
+---
+
+## Endpoints
+
+### Messaging — `localhost:3000`
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/v1/conversations` | Creator is added to the participants automatically |
+| `GET` | `/api/v1/conversations` | The caller's own conversations, newest first, cursor paginated |
+| `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
+| `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
+| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored |
+| `GET` | `/api/health` | Public |
+
+### Identity — `localhost:3001`
+
+Seeding for a local demonstration. `for-demo` is in the path because these
+endpoints hand out a token to whoever names a user, without checking anything —
+and `ForDemoOnlyGuard` refuses all of them outside a local environment.
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/v1/for-demo/tenants` | Creates a tenant, and publishes the event that provisions its search alias |
+| `GET` | `/api/v1/for-demo/tenants` | Every tenant — the only route that enumerates them, and the first the picker calls |
+| `POST` | `/api/v1/for-demo/users` | Creates a user inside one |
+| `GET` | `/api/v1/for-demo/users?tenantId=` | Lists a tenant's users — what the picker UI will read |
+| `POST` | `/api/v1/for-demo/tokens` | Issues a token for a user id. No credential is checked |
+| `GET` | `/api/health` | Public |
+
+Another tenant's conversation answers **404**, never 403 — a 403 would confirm it
+exists. A conversation in your own tenant that you are not a participant of answers
+**403**, on reading and on writing alike.
+
+That last clause used to be true only of writing. Reading checked the tenant and
+stopped there, so any token for a tenant could read any conversation in it by id —
+found by pointing a browser at the Isolation panel of the demo UI, fixed in both read
+paths, and now covered by three tests that a mutation each kills.
+
+---
+
+## The demo UI
+
+A Vue 3 client in [ui/](ui/), shaped like a messenger: chats on the left, the
+conversation on the right, and an identity switcher in the top right. Switching
+between two people is the most repeated action in a multi-tenant demo, so it is one
+click rather than a page of its own.
+
+**What it looks like, and what was checked:**
+[docs/ui-review/index.html](docs/ui-review/index.html) — screenshots taken by a real
+browser driving the container, split into
+[the messenger](docs/ui-review/messenger.html) and
+[what the API refuses](docs/ui-review/refusals.html). Each is taken at a point a test
+had just asserted something about, including the states nobody clicks through by
+hand.
+
+`pnpm stack:up` serves it from nginx at **:8088**. While changing it, `pnpm ui:dev`
+runs Vite on :5173 instead; both proxy `/identity-api` to 3001 and `/api` to 3000, so
+the browser makes same-origin calls and neither service needs a CORS policy (PLAN
+§10b). The two proxy configs have to be changed together.
+
+It builds from [ui/Dockerfile](ui/Dockerfile), with `ui/` as its whole build context
+— the client shares no stage with the server's image. `pnpm ui:build` is for working
+locally, not a prerequisite. Port **8088** rather than 8080, which is contested enough that a page
+from another project answering instead is a real possibility.
+
+Identity served the UI first, and that was wrong in a way worth recording: the client
+asks for `/identity-api/...`, identity has no such prefix and nothing to strip one
+with, so the page loaded and every call it made came back as `index.html` under a
+200. Serving static files and proxying an API are one job, and nginx does both.
+
+`ui/` is a separate package on purpose: it is outside the pnpm workspace, has its
+own lockfile and tsconfig, and is excluded from the server's TypeScript projects.
+A Vue toolchain and a NestJS one disagree about `module`, `lib` and `types`, and
+sharing one config makes both worse.
+
+The proxy is deliberately the only thing in front of the APIs. It is not a gateway:
+no authentication, no rate limiting, no request shaping — it routes two prefixes so
+the browser stays on one origin. See PLAN §10b for when a real one would earn its
+keep.

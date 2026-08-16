@@ -15,8 +15,55 @@ import { expect, test, type Page } from '@playwright/test';
 const SHOTS = join(process.cwd(), '..', 'docs', 'ui-review', 'screenshots');
 mkdirSync(SHOTS, { recursive: true });
 
-const shoot = (page: Page, name: string) =>
-  page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+/**
+ * Freezes everything on screen that changes between runs, then captures.
+ *
+ * These screenshots are committed, and without this every run rewrote all thirteen
+ * of them: the ids come from Mongo, the times come from the server clock, and the
+ * generated emails carry a slice of the tenant id. Twelve binary files churning on
+ * a run that changed nothing makes the one diff that matters impossible to see.
+ *
+ * It masks rather than removes, so the layout is exactly the layout — an id still
+ * occupies an id's width.
+ */
+const freeze = (page: Page) =>
+  page.evaluate(() => {
+    document.querySelectorAll('time').forEach((element) => {
+      element.textContent = '10:30 AM';
+    });
+    document.querySelectorAll('.mono, .entry__sub, .id').forEach((element) => {
+      const length = (element.textContent ?? '').trim().length;
+      if (length > 0) {
+        element.textContent = '0'.repeat(length);
+      }
+    });
+    // The seeded emails end in a slice of the tenant id.
+    document.querySelectorAll('option').forEach((option) => {
+      option.textContent = (option.textContent ?? '').replace(
+        /@[0-9a-f]{6}\.test/g,
+        '@demo.test',
+      );
+    });
+
+    // Panes with their own scrollbar land wherever the last render left them, and
+    // a two-pixel difference in scroll offset is a different PNG. Pinned to the
+    // bottom, which is where a chat thread belongs anyway.
+    document.querySelectorAll('.chat__thread, .chat__results, .rail').forEach((pane) => {
+      pane.scrollTop = pane.scrollHeight;
+    });
+  });
+
+const shoot = async (page: Page, name: string): Promise<void> => {
+  await freeze(page);
+  // Two frames after the edits above, so nothing is captured mid-paint.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))),
+      ),
+  );
+  await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+};
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -87,13 +134,14 @@ const becomes = async (page: Page, person: string): Promise<void> => {
 test.describe('the messenger', () => {
   test('switches identity, chats, pages, searches and is refused', async ({ page }) => {
     test.setTimeout(120_000);
-    const suffix = String(Date.now()).slice(-6);
 
     await page.goto('/');
     await expect(page.getByText('Nobody is signed in')).toBeVisible();
     await shoot(page, '30-signed-out');
 
-    await signIn(page, `Acme ${suffix}`, ['Alice', 'Bob']);
+    // A fixed name: tenant names are not unique, and a timestamp in one is a
+    // timestamp baked into every screenshot that shows the switcher.
+    await signIn(page, 'Acme Corp', ['Alice', 'Bob']);
     await shoot(page, '31-switcher-open');
 
     await becomes(page, 'Alice');
@@ -169,10 +217,9 @@ test.describe('the messenger', () => {
   });
 
   test('shows the chat in dark mode and at a phone width', async ({ page }) => {
-    const suffix = String(Date.now()).slice(-6);
 
     await page.goto('/');
-    await signIn(page, `Themed ${suffix}`, ['Dana', 'Eli']);
+    await signIn(page, 'Themed Co', ['Dana', 'Eli']);
     await becomes(page, 'Dana');
     await choose(page, 'New chat with', 'Eli');
     await page.getByRole('button', { name: 'Start' }).click();

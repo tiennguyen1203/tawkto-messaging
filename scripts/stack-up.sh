@@ -57,7 +57,9 @@ say "Building and starting the API, the indexer and the demo UI"
 docker compose --profile app up -d --build
 
 printf '\n\033[1mReady.\033[0m\n'
-printf '  Demo UI    http://localhost:%s\n' "${DEMO_UI_PORT:-8088}"
-printf '  Messaging  http://localhost:%s/swagger\n' "${PORT:-3000}"
-printf '  Identity   http://localhost:%s/api/health\n' "${IDENTITY_PORT:-3001}"
+printf '  Demo UI       http://localhost:%s\n' "${DEMO_UI_PORT:-8088}"
+printf '  Messaging     http://localhost:%s/swagger\n' "${PORT:-3000}"
+printf '  Identity      http://localhost:%s/api/health\n' "${IDENTITY_PORT:-3001}"
+printf '  Elasticsearch http://localhost:%s   (UI)\n' "${ELASTICVUE_PORT:-8089}"
+printf '  MongoDB       mongodb://localhost:%s/messaging?directConnection=true\n' "${MONGO_HOST_PORT:-27018}"
 printf '\nOpen the demo UI, use the switcher in the top right to make a tenant and two\npeople, and start a chat.\n'

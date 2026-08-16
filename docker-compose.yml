@@ -129,6 +129,17 @@ services:
       # A one-node cluster can never allocate replicas, so leave shard
       # allocation alone rather than letting the watermark turn it read-only.
       cluster.routing.allocation.disk.threshold_enabled: 'false'
+      # For the elasticvue container below. It is a browser client, so the requests
+      # come from the page's origin rather than from another container, and without
+      # these the cluster refuses them. Local only — this stack already runs with
+      # security off, and neither belongs anywhere a real cluster can be reached.
+      http.cors.enabled: 'true'
+      # The quotes are part of the value, not YAML syntax here. The entrypoint
+      # writes each of these into elasticsearch.yml verbatim, and a bare `*` there
+      # opens a YAML alias — the node dies at boot with a snakeyaml stack trace
+      # that says nothing about CORS.
+      http.cors.allow-origin: '"*"'
+      http.cors.allow-headers: 'X-Requested-With,Content-Type,Content-Length,Authorization'
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     healthcheck:
@@ -251,6 +262,27 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+    profiles:
+      - app
+    restart: unless-stopped
+
+  # A UI for Elasticsearch, for looking at what the indexer actually wrote.
+  #
+  # elasticvue rather than Kibana: 26 MB against 404 MB, and it starts instantly.
+  # Kibana is the better tool for a cluster you operate; this is a stack you poke at,
+  # and the thing worth seeing is the documents and the aliases.
+  #
+  # It talks to Elasticsearch from your browser, not from inside the network — hence
+  # the CORS settings above, and hence the URL it is preconfigured with is the one
+  # the host publishes.
+  elasticvue:
+    image: cars10/elasticvue:latest
+    ports:
+      - '${ELASTICVUE_PORT:-8089}:8080'
+    environment:
+      ELASTICVUE_CLUSTERS: '[{"name":"local","uri":"http://localhost:${ELASTICSEARCH_HOST_PORT:-9200}"}]'
+    depends_on:
+      - elasticsearch
     profiles:
       - app
     restart: unless-stopped

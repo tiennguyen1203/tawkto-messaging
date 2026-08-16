@@ -19,6 +19,24 @@ pnpm ui:e2e        # Playwright, against the running demo-ui container
 pnpm ui:review     # turns the screenshots it took into docs/ui-review/index.html
 ```
 
+### The screenshots are committed, so keep the churn down
+
+`shoot()` freezes everything volatile before it captures — times, Mongo ids, the
+generated emails, the scroll offset of every pane — because without that each run
+rewrote all thirteen PNGs and twelve meaningless binary diffs hid the one that
+mattered. Tenant names are fixed for the same reason; they do not have to be unique.
+
+About four of them still change per run, by roughly two dozen anti-aliased pixels on
+the border of the identity chip. Rendering itself is deterministic — four captures of
+one unchanged page are byte-identical — so this is a sub-pixel layout wobble, and not
+worth chasing further. **After a run that only produced noise, throw it away:**
+
+```bash
+git checkout -- docs/ui-review/screenshots
+```
+
+Commit them when the interface actually changed, not because a run happened.
+
 `e2e/` drives the container rather than the dev server, because the container is
 what a reviewer opens and the two differ in exactly the way that has caught this
 project out before — the proxy prefixes. Point `BASE_URL` at `:5173` to run it
