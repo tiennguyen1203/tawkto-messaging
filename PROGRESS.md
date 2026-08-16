@@ -1,6 +1,7 @@
 # Progress
 
-**Where this is: I4 in progress — its endpoint is done, the UI picker is next.**
+**Where this is: I4 in progress — the endpoint and the shared components are done,
+the picker page itself is next.**
 
 The one place that says what is done. [PLAN.md](docs/PLAN.md) says what each part is
 and why it is shaped that way; this says whether it happened and what proved it.
@@ -27,7 +28,7 @@ cluster each found something the suite could not.
 | I1 | Identity — tenants, users, token issuance, its own process | done | A token issued by identity accepted by messaging end to end; `APP_ENV=prod` answered 403 on every seeding route |
 | I2 | `tenant-created` event — identity publishes, messaging provisions the alias | done | The alias appeared ~2s after the tenant, with the right filter, **with no message ever sent** |
 | I3 | The demo UI shell — Vue, Vite, a typed API client, no features | done | The `demo-ui` container answering **`Content-Type: application/json`** on both proxied APIs — the check a 200 alone had passed while the app was broken. `POST` through the proxy returned 201; `/api/*` proved to reach messaging, not identity, by a route only messaging has; identity now 404s at `/` |
-| **I4** | **The picker — choose a tenant and a user, receive a token** | **in progress** | `GET /for-demo/tenants` is done: three mutations each killed exactly the right test, and the whole flow ran through the proxy against the live stack — list tenants, list users, take a token, open a conversation, post a message, read it back. The Vue picker itself is what remains |
+| **I4** | **The picker — choose a tenant and a user, receive a token** | **in progress** | Two of three parts done. The shared components: 21 tests, and six mutations each killed exactly the right one — a seventh killed nothing and the code it guarded was deleted rather than kept. `GET /for-demo/tenants` is done: three mutations each killed exactly the right test, and the whole flow ran through the proxy against the live stack — list tenants, list users, take a token, open a conversation, post a message, read it back. The Vue picker itself is what remains |
 | I5 | The messaging pane, and the CORS it needs | optional | — |
 
 ### Why I3 was marked done once already, wrongly

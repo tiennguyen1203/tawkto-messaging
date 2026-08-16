@@ -4,48 +4,81 @@ import { onMounted } from 'vue';
 import { request } from '@/api/client';
 import { identityPath, messagingPath } from '@/api/services';
 import { useRequest } from '@/api/use-request';
-import AsyncPanel from '@/shell/AsyncPanel.vue';
+import AsyncPanel from '@/components/AsyncPanel.vue';
+import BaseBadge from '@/components/BaseBadge.vue';
+import BaseCard from '@/components/BaseCard.vue';
 
 /**
  * The only page this part ships, and it exists to prove the wiring rather than to
  * be useful: the proxy reaches both services, the envelope is unwrapped, and the
- * loading and error states are the ones every later page will use.
+ * shared components carry the loading, error and retry behaviour every later page
+ * will use.
  */
 type Health = {
   status: string;
   info: Record<string, { status: string }>;
 };
 
-const identity = useRequest(() =>
-  request<Health>(identityPath('/api/health')),
-);
-const messaging = useRequest(() =>
-  request<Health>(messagingPath('/api/health')),
-);
+const identity = useRequest(() => request<Health>(identityPath('/api/health')));
+const messaging = useRequest(() => request<Health>(messagingPath('/api/health')));
 
 onMounted(() => {
   void identity.run();
   void messaging.run();
 });
+
+const toneOf = (status?: string): 'success' | 'danger' =>
+  status === 'ok' ? 'success' : 'danger';
 </script>
 
 <template>
-  <section class="stack">
-    <div>
-      <h2>Identity</h2>
-      <AsyncPanel :pending="identity.pending.value" :error="identity.error.value">
-        <pre>{{ JSON.stringify(identity.data.value, null, 2) }}</pre>
+  <div class="stack">
+    <BaseCard title="Identity">
+      <AsyncPanel
+        :pending="identity.pending.value"
+        :error="identity.error.value"
+        @retry="identity.run()"
+      >
+        <div class="stack">
+          <!-- The word, not only the colour: green and red look alike to enough
+               people that a status told in colour alone is not told at all. -->
+          <BaseBadge :tone="toneOf(identity.data.value?.status)">
+            {{ identity.data.value?.status }}
+          </BaseBadge>
+          <div class="row">
+            <BaseBadge
+              v-for="(value, name) in identity.data.value?.info"
+              :key="name"
+              :tone="toneOf(value.status)"
+            >
+              {{ name }}: {{ value.status }}
+            </BaseBadge>
+          </div>
+        </div>
       </AsyncPanel>
-    </div>
+    </BaseCard>
 
-    <div>
-      <h2>Messaging</h2>
+    <BaseCard title="Messaging">
       <AsyncPanel
         :pending="messaging.pending.value"
         :error="messaging.error.value"
+        @retry="messaging.run()"
       >
-        <pre>{{ JSON.stringify(messaging.data.value, null, 2) }}</pre>
+        <div class="stack">
+          <BaseBadge :tone="toneOf(messaging.data.value?.status)">
+            {{ messaging.data.value?.status }}
+          </BaseBadge>
+          <div class="row">
+            <BaseBadge
+              v-for="(value, name) in messaging.data.value?.info"
+              :key="name"
+              :tone="toneOf(value.status)"
+            >
+              {{ name }}: {{ value.status }}
+            </BaseBadge>
+          </div>
+        </div>
       </AsyncPanel>
-    </div>
-  </section>
+    </BaseCard>
+  </div>
 </template>

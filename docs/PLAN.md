@@ -640,6 +640,12 @@ The point of the whole exercise: choose who you are, get a token, and carry it.
   says what tenants exist. It is unscoped by necessity — a tenant *is* the scope —
   which is precisely why it lives behind `ForDemoOnlyGuard`: in a real product this
   belongs to an admin context with its own authorisation, never to a tenant's users
+- **The shared components first** — `BaseButton`, `BaseField` and the input and
+  select built on it, `BaseCard`, `BaseBadge`, `EmptyState`, `AsyncPanel`,
+  `CopyableValue`, over one set of design tokens. Before the first real page rather
+  than after it: the picker and the messaging pane need the same pieces, and the
+  second page written is where the inconsistency appears. They are documented in
+  [ui/README.md](../ui/README.md)
 - Pick a tenant, see its users, pick one, receive a token
 - The token is held in memory and shown for copying. Not in `localStorage`: this is a
   demo tool that hands out credentials for any user by name, and a token that

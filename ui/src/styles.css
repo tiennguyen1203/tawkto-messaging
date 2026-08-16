@@ -1,19 +1,94 @@
-/* Tokens and layout only. A page sets no colours of its own. */
+/**
+ * Tokens. Every component reads from here and defines no colour of its own.
+ *
+ * The palette, the density and the restraint come from a design-system query for
+ * an internal developer console: Minimalism/Swiss, dark-first, dense spacing. Two
+ * deliberate departures from what it suggested:
+ *
+ *  - No Google Fonts. It recommended JetBrains Mono + IBM Plex Sans, which means a
+ *    request to fonts.googleapis.com on every load. This is served from a container
+ *    that has to work on a laptop with no internet, and a font that fails to load is
+ *    a layout that reflows. System stacks cost nothing and never fail.
+ *  - Both themes, not dark only. The tokens below are defined light-first and
+ *    swapped under `prefers-color-scheme: dark`, so a reviewer on a light machine
+ *    sees a designed interface rather than an inverted one.
+ */
+
 :root {
-  --bg: #0f1216;
-  --surface: #171b21;
-  --border: #262c35;
-  --text: #e6e9ee;
-  --muted: #98a2b3;
-  --accent: #6ea8fe;
-  --danger: #f2777a;
-  --radius: 8px;
-  --gap: 16px;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  color-scheme: dark;
+  color-scheme: light dark;
+
+  /* Surfaces and text, light. Contrast against --surface: text 13.9:1, muted
+     4.7:1 — both above the 4.5:1 floor for normal text. */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-sunken: #eef0f4;
+  --border: #d3d8e0;
+  --border-strong: #aeb6c2;
+  --text: #14181f;
+  --muted: #5b6472;
+
+  /* One accent, one danger, one success. A third decorative colour on an internal
+     tool is a colour nobody can name the meaning of. */
+  --accent: #2454c7;
+  --accent-text: #ffffff;
+  --accent-weak: #e5ecfb;
+  --danger: #b3261e;
+  --danger-text: #ffffff;
+  --danger-weak: #fbe9e7;
+  --success: #14663b;
+  --success-weak: #e3f3ea;
+
+  /* Dense scale — 4px rhythm. This is a console, not a marketing page. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  /* Two durations, not one per component: a press has to feel immediate, a panel
+     swapping content can afford to be seen. Both are ignored under reduced motion. */
+  --motion-fast: 120ms;
+  --motion: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
 }
 
-* { box-sizing: border-box; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --surface: #171b21;
+    --surface-sunken: #12161b;
+    --border: #2a313b;
+    --border-strong: #414a57;
+    --text: #e6e9ee;
+    --muted: #9aa4b2;
+
+    /* Lifted and desaturated rather than the light values inverted — the same hue
+       at full saturation on a dark surface vibrates and loses contrast. */
+    --accent: #7aa2f7;
+    --accent-text: #0b1220;
+    --accent-weak: #1b2740;
+    --danger: #f2777a;
+    --danger-text: #1a0e0e;
+    --danger-weak: #2e1b1c;
+    --success: #6cc79b;
+    --success-weak: #14291f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
@@ -21,37 +96,87 @@ body {
   color: var(--text);
 }
 
+/* Never removed, only replaced: the ring is how a keyboard user knows where they
+   are. `:focus-visible` keeps it off mouse clicks without keeping it off keyboards. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Ids, tokens and timestamps are read character by character and compared column
+   by column, which proportional digits make harder than it needs to be. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .app-header {
   display: flex;
   align-items: baseline;
-  gap: var(--gap);
-  padding: var(--gap) 24px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border);
-}
-
-.app-header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-.app-header nav { display: flex; gap: 12px; }
-.app-header a { color: var(--muted); text-decoration: none; font-size: 14px; }
-.app-header a.router-link-active { color: var(--accent); }
-
-.app-main { padding: 24px; max-width: 880px; }
-
-.panel {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--gap);
 }
 
-.muted { color: var(--muted); }
-.error { color: var(--danger); }
-
-pre {
+.app-header h1 {
+  font-size: 15px;
   margin: 0;
-  overflow-x: auto;
-  font-size: 13px;
-  line-height: 1.5;
+  font-weight: 600;
 }
 
-.stack { display: grid; gap: var(--gap); }
-h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--muted); }
+.app-header nav {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.app-header a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  padding: var(--space-1) 0;
+}
+
+.app-header a:hover {
+  color: var(--text);
+}
+
+/* Weight as well as colour: the current page must be identifiable without seeing
+   the difference between two blues. */
+.app-header a.router-link-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.app-main {
+  padding: var(--space-5);
+  max-width: 960px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

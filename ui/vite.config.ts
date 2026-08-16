@@ -1,7 +1,11 @@
 import { fileURLToPath, URL } from 'node:url';
 
 import vue from '@vitejs/plugin-vue';
-import { defineConfig } from 'vite';
+// From vitest, so the `test` block below is typed. This only works while Vitest
+// resolves the same Vite as the project: Vitest 2 bundled Vite 5, which put a
+// second, older `Plugin` type in the tree and made every plugin here unassignable.
+// Keep the two majors in step.
+import { defineConfig } from 'vitest/config';
 
 const IDENTITY = process.env.IDENTITY_URL ?? 'http://localhost:3001';
 const MESSAGING = process.env.MESSAGING_URL ?? 'http://localhost:3000';
@@ -28,5 +32,11 @@ export default defineConfig({
       },
       '/api': { target: MESSAGING, changeOrigin: true },
     },
+  },
+  test: {
+    // Components need a DOM to mount into. happy-dom rather than jsdom: it starts
+    // in a fraction of the time and implements everything mounting a form control
+    // touches.
+    environment: 'happy-dom',
   },
 });
