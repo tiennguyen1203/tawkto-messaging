@@ -38,5 +38,8 @@ export default defineConfig({
     // in a fraction of the time and implements everything mounting a form control
     // touches.
     environment: 'happy-dom',
+    // Unit tests only. The Playwright specs in e2e/ match Vitest's default glob and
+    // would be collected here, where there is no browser to run them in.
+    include: ['src/**/*.spec.ts'],
   },
 });

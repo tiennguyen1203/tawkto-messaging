@@ -60,6 +60,10 @@ const inert = computed(() => props.disabled || props.loading);
   gap: var(--space-2);
   /* Comfortably past the 24×24 CSS px floor WCAG 2.2 sets for pointer targets. */
   min-height: 34px;
+  /* A grid stretches its children by default, and BaseCard is a grid: without this
+     a lone button spans the whole card and stops reading as a button. Ignored
+     inside the flex rows where buttons sit beside inputs. */
+  justify-self: start;
   padding: 0 var(--space-3);
   border-radius: var(--radius);
   border: 1px solid transparent;

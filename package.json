@@ -19,6 +19,8 @@
     "ui:dev": "pnpm --dir ui dev",
     "ui:build": "pnpm --dir ui build",
     "ui:test": "pnpm --dir ui test",
+    "ui:e2e": "pnpm --dir ui e2e",
+    "ui:review": "pnpm --dir ui review",
     "test": "APP_ENV=test jest --config jest.json --forceExit",
     "test:watch": "APP_ENV=test jest --config jest.json --watch",
     "test:cov": "APP_ENV=test jest --config jest.json --coverage",

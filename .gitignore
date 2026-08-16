@@ -18,6 +18,11 @@ coverage
 /ui/**/*.d.ts
 /ui/**/*.map
 
+# Playwright run artefacts. The screenshots under docs/ui-review/ are kept on
+# purpose — they are the review page — but traces and failure dumps are not.
+ui/e2e/.artifacts
+ui/playwright-report
+
 # Environment
 .env
 .env.local

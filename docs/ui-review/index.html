@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo UI — review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7f9; --surface: #fff; --border: #d3d8e0;
+        --text: #14181f; --muted: #5b6472; --accent: #2454c7;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1216; --surface: #171b21; --border: #2a313b;
+          --text: #e6e9ee; --muted: #9aa4b2; --accent: #7aa2f7;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); }
+      main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+      h1 { font-size: 22px; margin: 0 0 8px; }
+      .lede { color: var(--muted); margin: 0 0 8px; max-width: 68ch; }
+      code {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 0.9em; background: color-mix(in srgb, var(--border) 45%, transparent);
+        padding: 1px 5px; border-radius: 4px;
+      }
+      .shots { display: grid; gap: 32px; margin-top: 32px; }
+      figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+      img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--border); }
+      figcaption { display: grid; gap: 4px; padding: 14px 18px; }
+      figcaption strong { font-size: 14px; }
+      figcaption span { font-size: 14px; color: var(--muted); }
+      footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Demo UI — review</h1>
+      <p class="lede">
+        Every screenshot below was taken by a real Chromium driving the
+        <code>demo-ui</code> container, not the dev server — what a reviewer opens
+        is the nginx image, and the two differ in the proxy prefixes that have
+        already caught this project out once.
+      </p>
+      <p class="lede">
+        They are the output of assertions, not a separate exercise: each one is
+        taken at a point the test has just proved something about, so a shot that
+        stops being possible fails the run rather than quietly going stale.
+      </p>
+      <p class="lede">
+        Regenerate with <code>pnpm ui:e2e &amp;&amp; pnpm ui:review</code> from the
+        repository root, with the stack up.
+      </p>
+
+      <div class="shots">
+      <figure>
+        <img src="screenshots/01-picker-initial.png" alt="Nothing chosen yet" loading="lazy" />
+        <figcaption><strong>Nothing chosen yet</strong><span>The landing state. The user card refuses to guess — it says to choose a tenant first, because listing users needs one.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/02-tenant-created-no-users.png" alt="A tenant with no users" loading="lazy" />
+        <figcaption><strong>A tenant with no users</strong><span>Creating a tenant selects it, and the empty user list says what to do next rather than showing a blank area. Behind this, identity has already published <code>identity.tenant-created.v1</code> and messaging has provisioned the tenant’s search alias.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/03-user-selected.png" alt="A user to act as" loading="lazy" />
+        <figcaption><strong>A user to act as</strong><span>Each option carries its email, because two people called Alice is the normal case and an opaque id is not a choice anyone can make.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/04-token-issued.png" alt="A token, masked" loading="lazy" />
+        <figcaption><strong>A token, masked</strong><span>The badges say what is held. The token is masked by default: a screenshot of this page, or a shoulder behind it, should not be a credential leak.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/05-token-revealed.png" alt="Revealed and copyable" loading="lazy" />
+        <figcaption><strong>Revealed and copyable</strong><span>Shown on request. Truncated on screen, whole in the clipboard — what you copy is never less than what you were shown.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/06-after-reload-token-gone.png" alt="Reload, and it is gone" loading="lazy" />
+        <figcaption><strong>Reload, and it is gone</strong><span>Held in memory only. These endpoints issue a token for anyone who is named, so one that survives a reload is one nobody meant to keep.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/07-tenants-failed.png" alt="Identity unreachable" loading="lazy" />
+        <figcaption><strong>Identity unreachable</strong><span>The state nobody clicks through by hand, which is why it is the one that ships broken. The message is the server’s own, and there is a way back.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/08-picker-light.png" alt="Light" loading="lazy" />
+        <figcaption><strong>Light</strong><span>Tokens are defined light-first and swapped under <code>prefers-color-scheme</code>.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/09-picker-dark.png" alt="Dark" loading="lazy" />
+        <figcaption><strong>Dark</strong><span>Lifted, desaturated accents rather than the light values inverted — the same hue at full saturation on a dark surface vibrates and loses contrast.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/10-health-dark.png" alt="Health, dark" loading="lazy" />
+        <figcaption><strong>Health, dark</strong><span>Both services through the one proxy. The status is a word as well as a colour.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/11-health-light.png" alt="Health, light" loading="lazy" />
+        <figcaption><strong>Health, light</strong><span>The same page in the other theme, checked rather than assumed.</span></figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/12-picker-narrow.png" alt="375px" loading="lazy" />
+        <figcaption><strong>375px</strong><span>The rows wrap instead of scrolling sideways. The test asserts that too — <code>scrollWidth</code> may not exceed <code>clientWidth</code>.</span></figcaption>
+      </figure>
+      </div>
+
+      <footer>
+        12 screenshots · generated from <code>ui/e2e/picker.spec.ts</code> ·
+        this page is written by <code>ui/e2e/build-review-page.mjs</code> and should not be edited by hand
+      </footer>
+    </main>
+  </body>
+</html>

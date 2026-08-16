@@ -652,6 +652,11 @@ The point of the whole exercise: choose who you are, get a token, and carry it.
   survives a page reload is a token that outlives the demonstration
 - Creating a tenant and a user from the UI, so a reviewer never has to reach for curl
 
+**Done when:** a browser walks the whole flow against the container — tenant, user,
+token, reload — and the screenshots of each state, plus the failed and narrow ones,
+are on a page someone can open. Playwright drives it; the shots are taken at points
+the assertions have just passed, so they cannot drift from what the app does.
+
 **Done when:** a reviewer with an empty database can open one page, create a tenant
 and a user, and end up holding a token that messaging accepts.
 

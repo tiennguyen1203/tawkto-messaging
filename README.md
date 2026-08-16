@@ -106,9 +106,14 @@ does not collide with other projects already using the standard ports. Override 
 
 ### The demo UI
 
-A Vue 3 client in [ui/](ui/), for driving the demo by hand. Today it is a shell —
-a typed API client, an app frame and a health panel. The tenant/user picker and the
-messaging pane are [I4 and I5](PROGRESS.md).
+A Vue 3 client in [ui/](ui/), for driving the demo by hand: pick a tenant, pick one
+of its users, take their token. The messaging pane is [I5](PROGRESS.md) and still to
+come.
+
+**What it looks like, and what was checked:**
+[docs/ui-review/index.html](docs/ui-review/index.html) — twelve screenshots taken by
+a real browser driving the container, each at a point a test had just asserted
+something about, including the states nobody clicks through by hand.
 
 ```bash
 pnpm ui:install
@@ -336,7 +341,9 @@ which resolves through a string token the scanner cannot follow.
 | `pnpm ui:install` | Install the demo UI, which has its own lockfile |
 | `pnpm ui:dev` | Vite dev server for the demo UI, proxying to both APIs |
 | `pnpm ui:build` | Build the demo UI into `ui/dist`, where identity serves it |
-| `pnpm ui:test` | The demo UI's own tests |
+| `pnpm ui:test` | The demo UI's unit tests |
+| `pnpm ui:e2e` | Playwright against the running `demo-ui` container, writing screenshots |
+| `pnpm ui:review` | Builds [docs/ui-review/index.html](docs/ui-review/index.html) from those screenshots |
 
 ## Documentation
 

@@ -6,7 +6,8 @@ import { RouterLink, RouterView } from 'vue-router';
   <header class="app-header">
     <h1>Messaging demo</h1>
     <nav>
-      <RouterLink to="/">Health</RouterLink>
+      <RouterLink to="/">Picker</RouterLink>
+      <RouterLink to="/health">Health</RouterLink>
     </nav>
   </header>
 

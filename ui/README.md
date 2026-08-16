@@ -14,8 +14,17 @@ machine while failing in Docker, where this is built alone.
 ```bash
 pnpm --dir ui install
 pnpm ui:dev        # from the repository root — http://localhost:5173
-pnpm ui:test
+pnpm ui:test       # unit
+pnpm ui:e2e        # Playwright, against the running demo-ui container
+pnpm ui:review     # turns the screenshots it took into docs/ui-review/index.html
 ```
+
+`e2e/` drives the container rather than the dev server, because the container is
+what a reviewer opens and the two differ in exactly the way that has caught this
+project out before — the proxy prefixes. Point `BASE_URL` at `:5173` to run it
+against Vite instead. The screenshots are the point as much as the assertions: they
+are taken where a test has just proved something, so they cannot drift, and they
+cover the states nobody clicks through by hand.
 
 Vite proxies `/identity-api` to identity (3001) and `/api` to messaging (3000) — two
 prefixes because both services answer on `/api/health`, so the path alone cannot say
