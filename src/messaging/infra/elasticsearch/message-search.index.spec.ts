@@ -323,6 +323,64 @@ describe('@infra/elasticsearch/message-search.index', () => {
       });
     });
 
+    describe('when the term is misspelled', () => {
+      it('should still find it', async () => {
+        await seed(3);
+
+        // One transposition. Search is how anyone finds anything here, and a
+        // search that answers nothing because a finger slipped is a search people
+        // stop using.
+        expect((await ask({ text: 'brvao' })).items).toHaveLength(3);
+      });
+
+      it('should rank an exact hit above a near miss', async () => {
+        await applyAndRefresh([
+          write({
+            messageId: 'exact',
+            content: 'the bravo report',
+            timestamp: 1_786_763_181_000,
+          }),
+          write({
+            messageId: 'fuzzy',
+            content: 'the bravos report',
+            timestamp: 1_786_763_182_000,
+          }),
+        ]);
+
+        const page = await ask({ text: 'bravo' });
+
+        // What you typed wins. Without the boosted exact clause the two compete on
+        // blended term frequencies and the near miss can come first, which is a
+        // ranking nobody can explain.
+        expect(page.items.map((item) => item.messageId)).toEqual([
+          helper.id('exact'),
+          helper.id('fuzzy'),
+        ]);
+      });
+
+      it('should not forgive a typo in the first letter', async () => {
+        await seed(3);
+
+        // The cost of `prefix_length: 1`, stated out loud: it is what keeps a fuzzy
+        // term from expanding across the dictionary, and typos are rarely first.
+        expect((await ask({ text: 'xravo' })).items).toEqual([]);
+      });
+
+      it('should not forgive anything in a very short word', async () => {
+        await applyAndRefresh([
+          write({
+            messageId: 'short',
+            content: 'ok then',
+            timestamp: 1_786_763_181_000,
+          }),
+        ]);
+
+        // AUTO allows no edits below three characters. Otherwise every two-letter
+        // word matches every other one, and the results are noise.
+        expect((await ask({ text: 'oz' })).items).toEqual([]);
+      });
+    });
+
     describe('when the term appears in no message', () => {
       it('should return an empty page', async () => {
         await seed(3);

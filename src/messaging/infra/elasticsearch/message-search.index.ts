@@ -83,6 +83,12 @@ const identityOf = (write: MessageIndexWrite) =>
     ? { tenantId: write.document.tenantId, messageId: write.document.messageId }
     : { tenantId: write.tenantId, messageId: write.messageId };
 
+/** Characters that must match before edits are considered. */
+const FUZZY_PREFIX_LENGTH = 1;
+
+/** Ceiling on the terms one fuzzy term may expand into. Elasticsearch's default. */
+const FUZZY_MAX_EXPANSIONS = 50;
+
 /**
  * The only way into the message search index.
  *
@@ -235,7 +241,31 @@ export class MessageSearchIndex {
           // `conversationId` filters rather than matches: it is a keyword, the
           // clause contributes no score, and a filter clause is cacheable.
           filter: [{ term: { conversationId: query.conversationId } }],
-          must: [{ match: { content: query.text } }],
+          // One clause, with fuzziness on it. A second, boosted, exact clause was here
+          // on the theory that a near miss could otherwise outrank what you actually
+          // typed. Removing it broke no test, including the one that asserts exactly
+          // that ordering — Elasticsearch rewrites a fuzzy match with
+          // `top_terms_blended_freqs_50`, which blends the document frequencies of the
+          // expanded terms precisely so a rare variant cannot outscore the real one.
+          // The extra clause was a defence against something the engine already does.
+          must: [
+            {
+              match: {
+                content: {
+                  query: query.text,
+                  // AUTO is per term, by length: no edits below three characters, one
+                  // up to five, two beyond. A blanket 2 makes every short word a match
+                  // for every other short word.
+                  fuzziness: 'AUTO',
+                  // The first character must be right. It is what keeps a fuzzy term
+                  // from expanding across the dictionary; the cost is that a typo in
+                  // the *first* letter is not forgiven, and typos rarely are.
+                  prefix_length: FUZZY_PREFIX_LENGTH,
+                  max_expansions: FUZZY_MAX_EXPANSIONS,
+                },
+              },
+            },
+          ],
         },
       },
       // `_score` alone is not a stable order — equal scores may come back in any

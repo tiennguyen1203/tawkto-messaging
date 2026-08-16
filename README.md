@@ -197,6 +197,23 @@ collection. Neither raises an error.
 all evaporated, turning a silent breach into a loud failure.
 [base.repository.spec.ts](src/shared/base.repository.spec.ts) covers it.
 
+### Search tolerates typos
+
+`fuzziness: AUTO` on the match, so `deploymnet` finds `deployment`. AUTO is per term
+by length: no edits below three characters, one up to five, two beyond — a blanket
+2 would make every short word a match for every other one.
+
+`prefix_length: 1` means the first character must be right. That is what stops a
+fuzzy term expanding across the dictionary, and the cost is that a typo in the first
+letter is not forgiven. Typos rarely are.
+
+There was a second, boosted, exact clause here, on the theory that a near miss could
+otherwise outrank what you actually typed. Removing it broke no test — including the
+one asserting that ordering. Elasticsearch rewrites a fuzzy match with
+`top_terms_blended_freqs_50`, which blends the expanded terms' document frequencies
+for exactly that reason. The clause was defending against something the engine
+already does.
+
 ### Indexes
 
 Indexes live in `migrations/` and nowhere else; `autoIndex` is off in every
@@ -314,7 +331,7 @@ Stated because their absence is a decision, not an oversight.
 | `GET` | `/api/v1/conversations` | The caller's own conversations, newest first, cursor paginated |
 | `POST` | `/api/v1/messages` | Sender comes from the token; timestamp from the server |
 | `GET` | `/api/v1/conversations/:conversationId/messages` | Cursor paginated, newest first |
-| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored |
+| `GET` | `/api/v1/conversations/:conversationId/messages/search?q=` | Full-text, cursor paginated, scored, and forgiving of typos |
 | `GET` | `/api/health` | Public |
 
 ### Identity — `localhost:3001`

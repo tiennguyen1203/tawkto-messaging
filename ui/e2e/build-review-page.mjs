@@ -45,7 +45,7 @@ const CAPTIONS = {
   },
   '36-search-results': {
     title: 'Search inside the conversation',
-    body: '<code>GET /conversations/:id/messages/search?q=</code>, taking over the thread while it has a query. Mongo → Debezium → Kafka → Elasticsearch means a message sent a second ago is not findable yet, so the test polls rather than sleeping.',
+    body: '<code>GET /conversations/:id/messages/search?q=</code>, taking over the thread while it has a query. Typos are forgiven — <code>deploymnet</code> finds <code>deployment</code> — except in the first letter, which is the price of keeping the fuzzy term from expanding across the dictionary. Mongo → Debezium → Kafka → Elasticsearch means a message sent a second ago is not findable yet, so the test polls rather than sleeping.',
   },
   '37-isolation-proved': {
     title: 'Refused twice, for two different reasons',
