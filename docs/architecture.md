@@ -6,21 +6,15 @@ it can be corrected in the same commit as the thing it describes.
 | | Meaning |
 |---|---|
 | green | Built and verified on a running stack |
-| amber | Scaffolded — exists, does no work yet |
-| red, dashed | Not built; dashed edges are flows that do not run |
+| grey, dashed box | **`for-demo`** — scaffolding, so the service can be shown to somebody. It would not ship in this form |
+
+Everything is green: there is nothing here that is built but unproven, and nothing
+sketched that does not run. Amber and red were in this legend while that was not
+true, and are gone with the things they described.
 
 ```mermaid
 flowchart TD
     client(["Client<br/>bearer token carries sub + tenantId"])
-
-    demoui["Demo UI — ui/, Vue + Vite on nginx<br/>static assets, plus /identity-api and /api<br/>proxied so the browser stays same-origin<br/>shell only: no picker yet"]
-
-    subgraph identity["Identity — src/identity/main.ts"]
-        direction TB
-        idctl["for-demo controllers<br/>tenants · users · tokens"]
-        idrepo["Tenant and User repositories"]
-        idpub["Tenant events publisher"]
-    end
 
     subgraph api["Messaging API — src/messaging/main.ts"]
         direction TB
@@ -29,6 +23,21 @@ flowchart TD
         uc["Use cases<br/>create conversation · create message · list messages"]
         repo["Tenant-scoped repositories<br/>every filter confined to the tenant"]
         searchuc["Search use case<br/>GET conversations/:id/messages/search"]
+    end
+
+    %% Everything in this box exists so the messaging service can be demonstrated.
+    %% None of it is the subject, and none of it would ship as-is.
+    subgraph fordemo["for-demo — scaffolding, so messaging can be shown"]
+        direction TB
+
+        demoui["Demo UI — ui/, Vue on nginx<br/>chat rail · thread · identity switcher<br/>proxies /identity-api and /api, one origin"]
+
+        subgraph identity["Identity — src/identity/main.ts"]
+            direction TB
+            idctl["for-demo controllers<br/>tenants · users · tokens<br/>no credential is checked"]
+            idrepo["Tenant and User repositories"]
+            idpub["Tenant events publisher"]
+        end
     end
 
     mongo[("MongoDB — replica set rs0<br/>conversations · messages<br/>indexes owned by migrations")]
@@ -41,14 +50,13 @@ flowchart TD
     client -->|browser| demoui
     demoui -->|/identity-api/* prefix stripped| idctl
     demoui -->|/api/*| guard
-    client -->|HTTPS| idctl
     idctl --> idrepo
     idctl --> idpub
     idrepo -->|tenants · users| mongo
     idpub -->|identity.tenant-created.v1| kafka
-    idctl -.->|signed JWT| client
+    idctl -.->|signed JWT| demoui
 
-    client -->|HTTPS| guard
+    client -->|HTTPS, token in hand| guard
     guard --> ctl
     ctl --> uc
     uc --> repo
@@ -64,15 +72,20 @@ flowchart TD
     searchuc -->|match and search_after| es
 
     classDef done fill:#e7f4ec,stroke:#17804a,stroke-width:2px,color:#11161d
-    classDef wip fill:#fbf2df,stroke:#a2700a,stroke-width:2px,color:#11161d
-    classDef todo fill:#fbeceb,stroke:#b23a2f,stroke-width:2px,color:#11161d
     classDef plain fill:#f2f4f7,stroke:#8b95a1,stroke-width:1px,color:#11161d
 
     class client plain
     class guard,ctl,uc,repo,mongo,dbz,kafka,consumer,es,searchuc done
     class idctl,idrepo,idpub done
-    class demoui wip
+    class demoui done
     class redis done
+
+    %% Grey and dashed, so the eye reads this as the stage rather than the play —
+    %% including the cluster nested inside it, which otherwise renders in the same
+    %% colour as the service being assessed and pulls the attention the wrong way.
+    style fordemo fill:#f6f7f9,stroke:#8b95a1,stroke-width:1px,stroke-dasharray: 6 4
+    style identity fill:#eceef2,stroke:#8b95a1,stroke-width:1px
+    style api fill:#eaf4ee,stroke:#17804a,stroke-width:2px
 ```
 
 A message is written **once**, to MongoDB. Nothing publishes to Kafka on the
@@ -86,18 +99,20 @@ the order the events arrived: a create and an edit both write the document whole
 deletion removes it. Posting a message makes it searchable in about two seconds,
 editing it replaces the indexed copy, and deleting it removes it — all verified on
 compose, as is searching it: a term posted through the API is findable within a
-couple of seconds, scoped to one conversation and one tenant. Nothing in the diagram
-is dashed any more: every arrow carries traffic.
+couple of seconds, scoped to one conversation and one tenant. Every arrow carries
+traffic — the one dashed edge is a response, not an unbuilt flow.
 
-The one amber box is the demo UI: its container is verified — both proxied APIs
-answer JSON through it — but it drives nothing yet, being one health panel and the
-client that later pages will use.
+**The grey box is the point of the picture.** Identity and the demo client are in it
+because neither is the subject: the brief asks for messaging, and these exist so that
+messaging can be driven by a person rather than by curl. Identity hands out a token
+to anyone who names a user, without checking a credential — `ForDemoOnlyGuard`
+refuses every one of those routes outside a local environment. The client is a Vue
+app on nginx, which also proxies both APIs so the browser stays on one origin.
 
-It sits outside both subgraphs deliberately. It is a browser client, not a part of
-either service: identity served it at first, and doing so meant the page could load
-while every call it made returned `index.html` under a 200, because identity has no
-`/identity-api` prefix to strip. The proxy is what makes the built client behave the
-way the dev server does.
+Everything outside that box is the service being assessed, and none of it knows the
+box exists. Messaging never calls identity; it verifies a signature and reads the
+tenant out of the claim. Take the grey box away and messaging is unchanged — you
+would simply have to issue your own tokens.
 
 ## What state each component is in
 
@@ -120,11 +135,21 @@ existed before the event did. What made the lost case dangerous, an alias typo
 silently becoming a concrete index, is now refused by
 `action.auto_create_index`.
 
-**No endpoint lists conversations.** They can be created and posted into, but not
-enumerated — which is also why `lastMessageAt` was dropped rather than built: it
-would have been maintained for no reader. `GET /api/v1/conversations` ordered by
-recent activity is the natural next endpoint, and the one that would give it a
-purpose.
+**Conversations are listed by creation, not by activity.** `GET /api/v1/conversations`
+returns the caller's own, newest first, behind a multikey index on
+`(tenantId, participantIds, createdAt, _id)`. A messenger normally sorts by the newest
+message, which needs the `lastMessageAt` dropped in M3.4 because nothing read it —
+something reads it now, so it is a real candidate again. It stays out because
+maintaining it is an extra write on the hottest path in the product, and that is its
+own decision.
+
+**The projection cannot rebuild itself from the log.** The connector runs with
+`snapshot.mode: no_data` and Kafka retention is finite, so the topic is not a full
+history of the collection. `pnpm es:reindex` rebuilds the index from MongoDB instead,
+with `--prune` for documents whose message is gone. It was written after a count
+found 392 messages against 200 indexed documents — all of the missing predating a
+period when the stack was being torn down and rebuilt, and every message since
+present.
 
 **The topic name is written twice.** `KafkaTopic.MessageChanged` is injected into
 the connector config by `scripts/register-debezium.ts`, so the producer cannot

@@ -173,6 +173,41 @@ services:
     profiles:
       - migrate
 
+  # The three provisioning steps, containerised so the whole stack needs Docker and
+  # nothing else. Run once after the infrastructure is healthy:
+  #
+  #   docker compose --profile provision run --rm provision
+  #
+  # A one-off container rather than something the API does at boot, for the reason
+  # migrations are: replicas would race each other, and an index or a topic that
+  # fails to apply should stop a deploy rather than a request. All three are
+  # idempotent, so running it again is how you recover from a half-finished start.
+  provision:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tools
+    command:
+      - sh
+      - -c
+      - pnpm es:apply-templates && pnpm kafka:create-topics && pnpm debezium:register
+    environment:
+      # In-network addresses: this runs beside the services, not on the host, so
+      # the published ports are the wrong ones to reach for.
+      ELASTICSEARCH_NODE: http://elasticsearch:9200
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CONNECT_URL: http://kafka-connect:8083
+      MONGO_URI: mongodb://mongo:27017/messaging?replicaSet=rs0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    profiles:
+      - provision
+
   # One image, one command each — see ADR-001. Identity joins as another service
   # here, not as another Dockerfile.
   messaging-api:

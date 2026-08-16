@@ -15,7 +15,7 @@
     "start:consumer": "pnpm build && node dist/messaging/main.consumer",
     "start:identity": "pnpm build && node dist/identity/main",
     "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.ts\" --fix",
-    "stack:up": "bash scripts/stack-up.sh",
+    "stack:up": "bash scripts/start.sh",
     "stack:down": "docker compose --profile app --profile migrate down",
     "ui:install": "pnpm --dir ui install",
     "ui:dev": "pnpm --dir ui dev",

@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 #
-# Brings the whole thing up, in the order it has to happen.
+# Brings the whole thing up. Docker is the only thing you need installed.
 #
-#   pnpm stack:up
+#   ./scripts/start.sh
 #
-# Six commands with two waits between them is six chances to run one out of order,
-# and the failure when you do is obscure — a consumer that dies on a missing topic,
-# an index that was never created. This is the same six, in the only order that
-# works, with the waiting done properly rather than by a sleep.
+# Six steps with two waits between them is six chances to run one out of order, and
+# the failure when you do is obscure — a consumer that dies on a missing topic, an
+# index that was never created. This is those six, in the only order that works,
+# waiting on health checks rather than on a sleep.
 #
-# Everything it runs is idempotent, so running it again is how you recover from a
-# half-finished start.
+# Everything it runs is idempotent, so running it again is also how you recover from
+# a half-finished start.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 INFRA=(mongo redis kafka kafka-connect elasticsearch)
 say() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker is not running. Start Docker Desktop (or your daemon) and try again." >&2
+  exit 1
+fi
 
 if [ ! -f .env ]; then
   cp .env.example .env
@@ -42,18 +47,16 @@ for service in "${INFRA[@]}"; do
   echo "  $service ✓"
 done
 
-# The three provisioning tools are TypeScript and run from here, not from the image:
-# the production stage installs runtime dependencies only. `migrate` is the exception
-# and has its own compose service, because migrate-mongo is a runtime dependency.
 say "Applying MongoDB migrations"
 docker compose --profile migrate run --rm migrate
 
-say "Creating the Elasticsearch index and Kafka topics, and registering the connector"
-pnpm es:apply-templates
-pnpm kafka:create-topics
-pnpm debezium:register
+# The Elasticsearch index, both Kafka topics and the CDC connector. These are
+# TypeScript tools; the `tools` image carries them so that none of this needs Node
+# on your machine.
+say "Creating the search index, the Kafka topics and the CDC connector"
+docker compose --profile provision run --rm provision
 
-say "Building and starting the API, the indexer and the demo UI"
+say "Building and starting the API, the indexer, identity and the demo UI"
 docker compose --profile app up -d --build
 
 printf '\n\033[1mReady.\033[0m\n'

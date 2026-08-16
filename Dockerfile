@@ -30,6 +30,26 @@ COPY src ./src
 RUN pnpm build
 
 # ============================================
+# Tools stage — the provisioning scripts, containerised
+# ============================================
+#
+# So that running this project needs Docker and nothing else. The three
+# provisioning tools are TypeScript run through ts-node, which is why they used to
+# be run from the developer's machine; here they get the dev dependencies they need
+# and `/app` is the repository root, so every path they resolve — the index
+# template, the connector config — lands exactly where it does on a laptop.
+#
+# Built from `deps`, so it reuses the install layer the app build already paid for.
+FROM deps AS tools
+
+COPY tsconfig*.json ./
+COPY src ./src
+COPY scripts ./scripts
+COPY infra ./infra
+COPY migrations ./migrations
+COPY migrate-mongo-config.js ./
+
+# ============================================
 # Production dependencies stage
 # ============================================
 FROM base AS prod-deps
