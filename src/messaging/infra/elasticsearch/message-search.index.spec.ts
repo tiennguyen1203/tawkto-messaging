@@ -333,28 +333,35 @@ describe('@infra/elasticsearch/message-search.index', () => {
         expect((await ask({ text: 'brvao' })).items).toHaveLength(3);
       });
 
-      it('should rank an exact hit above a near miss', async () => {
+      it('should rank an exact hit above a near miss in a shorter message', async () => {
+        // The length difference is the whole test. With messages of similar length
+        // the engine gets this right by itself, which is why an earlier version of
+        // this test passed with the boosted clause deleted and said nothing useful.
+        //
+        // Field-length normalisation is what breaks it: measured on a real cluster,
+        // a single fuzzy clause scores the short near miss 0.91 and the long exact
+        // hit 0.50. The reader typed the word that is in the second one.
         await applyAndRefresh([
           write({
-            messageId: 'exact',
-            content: 'the bravo report',
+            messageId: 'long-exact',
+            content:
+              'bravo lorem ipsum dolor sit amet consectetur adipiscing elit sed do ' +
+              'eiusmod tempor incididunt ut labore et dolore magna aliqua enim ad ' +
+              'minim veniam quis nostrud exercitation ullamco laboris nisi aliquip',
             timestamp: 1_786_763_181_000,
           }),
           write({
-            messageId: 'fuzzy',
-            content: 'the bravos report',
+            messageId: 'short-fuzzy',
+            content: 'bravos',
             timestamp: 1_786_763_182_000,
           }),
         ]);
 
         const page = await ask({ text: 'bravo' });
 
-        // What you typed wins. Without the boosted exact clause the two compete on
-        // blended term frequencies and the near miss can come first, which is a
-        // ranking nobody can explain.
         expect(page.items.map((item) => item.messageId)).toEqual([
-          helper.id('exact'),
-          helper.id('fuzzy'),
+          helper.id('long-exact'),
+          helper.id('short-fuzzy'),
         ]);
       });
 

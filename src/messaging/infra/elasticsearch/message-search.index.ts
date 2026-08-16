@@ -83,6 +83,13 @@ const identityOf = (write: MessageIndexWrite) =>
     ? { tenantId: write.document.tenantId, messageId: write.document.messageId }
     : { tenantId: write.tenantId, messageId: write.messageId };
 
+/**
+ * How far the thumb goes on the scale for a document containing the word as typed.
+ * Three is enough to lift an exact hit in a long message above a near miss in a
+ * short one, which is the case that motivated it.
+ */
+const EXACT_MATCH_BOOST = 3;
+
 /** Characters that must match before edits are considered. */
 const FUZZY_PREFIX_LENGTH = 1;
 
@@ -241,14 +248,24 @@ export class MessageSearchIndex {
           // `conversationId` filters rather than matches: it is a keyword, the
           // clause contributes no score, and a filter clause is cacheable.
           filter: [{ term: { conversationId: query.conversationId } }],
-          // One clause, with fuzziness on it. A second, boosted, exact clause was here
-          // on the theory that a near miss could otherwise outrank what you actually
-          // typed. Removing it broke no test, including the one that asserts exactly
-          // that ordering — Elasticsearch rewrites a fuzzy match with
-          // `top_terms_blended_freqs_50`, which blends the document frequencies of the
-          // expanded terms precisely so a rare variant cannot outscore the real one.
-          // The extra clause was a defence against something the engine already does.
-          must: [
+          // Two clauses: what you typed, boosted, and what you might have meant.
+          //
+          // A single fuzzy clause is not enough, and the reason is field-length
+          // normalisation rather than IDF. Measured on a real cluster: searching
+          // `bravo` against a long message containing `bravo` and a short one
+          // containing `bravos` scores the short near-miss 0.91 and the exact hit
+          // 0.50 — the document with the word you actually typed comes second. The
+          // boosted exact clause puts it back on top at 1.99.
+          //
+          // This is not a guarantee, and it is not meant to be: a long enough document
+          // still loses to a short variant. It is a thumb on the scale in the
+          // direction of what the reader asked for.
+          should: [
+            {
+              match: {
+                content: { query: query.text, boost: EXACT_MATCH_BOOST },
+              },
+            },
             {
               match: {
                 content: {
@@ -266,6 +283,7 @@ export class MessageSearchIndex {
               },
             },
           ],
+          minimum_should_match: 1,
         },
       },
       // `_score` alone is not a stable order — equal scores may come back in any

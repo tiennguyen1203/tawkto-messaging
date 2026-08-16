@@ -207,12 +207,17 @@ by length: no edits below three characters, one up to five, two beyond — a bla
 fuzzy term expanding across the dictionary, and the cost is that a typo in the first
 letter is not forgiven. Typos rarely are.
 
-There was a second, boosted, exact clause here, on the theory that a near miss could
-otherwise outrank what you actually typed. Removing it broke no test — including the
-one asserting that ordering. Elasticsearch rewrites a fuzzy match with
-`top_terms_blended_freqs_50`, which blends the expanded terms' document frequencies
-for exactly that reason. The clause was defending against something the engine
-already does.
+A second, boosted, exact clause sits beside the fuzzy one so that a document
+containing the word as typed outranks one that merely resembles it. Not for the
+reason you would guess: Elasticsearch already blends the expanded terms' document
+frequencies (`top_terms_blended_freqs_50`), so IDF is not the problem. **Field-length
+normalisation is.** Measured on a real cluster, searching `bravo` against a long
+message containing `bravo` and a short one containing `bravos` scores the near miss
+0.91 and the exact hit 0.50 — the reader's own word comes second. The boost puts it
+back on top at 1.99.
+
+It is a thumb on the scale, not a guarantee: a long enough message still loses to a
+short variant.
 
 ### Indexes
 
