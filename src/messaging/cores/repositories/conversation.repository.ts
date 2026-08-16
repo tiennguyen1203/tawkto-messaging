@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { getModelForClass } from '@typegoose/typegoose';
-import { Connection, Types } from 'mongoose';
+import { Connection, FilterQuery, Types } from 'mongoose';
 import { ClsService } from 'nestjs-cls';
 
 import { TenantScopedRepository } from '@/shared/tenant-scoped.repository';
@@ -69,6 +69,48 @@ export class ConversationRepository extends TenantScopedRepository<ConversationM
     }
 
     return this.findOne({ _id: new Types.ObjectId(id) });
+  }
+
+  /**
+   * The conversations this caller is in, newest first, one keyset page at a time.
+   *
+   * Participation is filtered in the query, not after it: a page of twenty that
+   * then drops the ones you may not see is a page of four, and nothing tells the
+   * caller the difference between that and there being only four.
+   *
+   * Ordered by `createdAt`, not by last activity. A messenger normally sorts by the
+   * newest message, which needs a `lastMessageAt` this model deliberately does not
+   * carry — dropped in M3.4 because nothing read it. Something reads it now, so it
+   * is a real candidate again; it stays out of this change because maintaining it
+   * is an extra write on the hottest path in the product, and that deserves its own
+   * decision rather than arriving as a side effect of a list endpoint.
+   *
+   * Backed by `tenant_participant_createdAt_id` — see the migration. Without it
+   * this is a collection scan followed by an in-memory sort.
+   */
+  pageByParticipant(query: {
+    participantId: string;
+    limit: number;
+    before?: { createdAt: Date; id: string };
+  }) {
+    const filter: FilterQuery<ConversationModel> = {
+      participantIds: query.participantId,
+    };
+
+    if (query.before) {
+      // The full sort key, so two conversations created in the same millisecond
+      // are neither repeated nor skipped across a page break.
+      const { createdAt, id } = query.before;
+      filter.$or = [
+        { createdAt: { $lt: createdAt } },
+        { createdAt, _id: { $lt: new Types.ObjectId(id) } },
+      ];
+    }
+
+    return this.find(filter, {
+      sort: { createdAt: -1, _id: -1 },
+      limit: query.limit,
+    });
   }
 
   /**
